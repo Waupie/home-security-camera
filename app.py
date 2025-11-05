@@ -31,7 +31,16 @@ def generate_mjpeg():
         with frame_lock:
             frame = picam2.capture_array("main")
         # Convert numpy array to JPEG bytes via PIL
-        img = Image.fromarray(frame)
+        # libcamera/Picamera2 can return frames in BGR order even when format is RGB888.
+        # That will make the image appear purplish (red/blue swapped). Ensure we pass
+        # an RGB-ordered array to PIL by swapping channels when necessary.
+        if hasattr(frame, 'ndim') and frame.ndim == 3 and frame.shape[2] == 3:
+            # Swap BGR -> RGB
+            rgb_frame = frame[..., ::-1]
+        else:
+            rgb_frame = frame
+
+        img = Image.fromarray(rgb_frame)
         buf = BytesIO()
         img.save(buf, format="JPEG", quality=80)
         jpg = buf.getvalue()
