@@ -1,0 +1,20 @@
+html name=templates/index.html
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Pi Camera Live</title>
+    <style>
+      body { background:#111; color:#eee; font-family: sans-serif; text-align:center; }
+      img { max-width: 100%; height: auto; border: 4px solid #222; margin-top: 20px; }
+      .container { width: 90%; max-width: 900px; margin: 0 auto; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Pi Camera Live Stream</h1>
+      <p>Stream URL: <code>/stream</code></p>
+      <img src="/stream" alt="Live stream">
+    </div>
+  </body>
+</html>
