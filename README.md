@@ -1,0 +1,2 @@
+#Home security camera project
+A lightweight, Python-based home surveillance system built with Flask. The application streams live video from a connected camera and intelligently detects motion in real time. When movement is detected, it automatically starts recording and sends the captured footage to a remote API for secure storage and further processing. Designed for simplicity, reliability, and easy integration with other home automation or monitoring systems.
