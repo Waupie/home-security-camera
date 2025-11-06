@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
-Simple MJPEG streaming server using Picamera2 and Flask.
+Minimal MJPEG streaming server using Picamera2 and Flask.
+
+Hard-coded to stream 1920x1080 at ~30 FPS. No environment toggles, no
+day/night logic, no GPIO — exactly what you asked for: a simple, fixed
+stream that you don't need to change.
 
 View in your browser at:
     http://<raspberry-pi-ip>:5000/
@@ -11,181 +15,94 @@ from PIL import Image
 from io import BytesIO
 import threading
 import time
-import os
-import numpy as np
-
-# Optional GPIO control for IR illuminator. If you wire an IR LED to a GPIO pin
-# (with proper transistor/driver) set the environment variable IR_GPIO_PIN to
-# the pin number (BCM). The code will try gpiozero first, then RPi.GPIO.
-IR_GPIO_PIN = os.getenv("IR_GPIO_PIN")
-_ir_ctrl = None
-if IR_GPIO_PIN:
-    try:
-        from gpiozero import DigitalOutputDevice
-        _ir_ctrl = DigitalOutputDevice(int(IR_GPIO_PIN))
-    except Exception:
-        try:
-            import RPi.GPIO as GPIO
-            GPIO.setmode(GPIO.BCM)
-            GPIO.setup(int(IR_GPIO_PIN), GPIO.OUT)
-            GPIO.output(int(IR_GPIO_PIN), GPIO.LOW)
-            class _RPICtrl:
-                def __init__(self, pin):
-                    self.pin = pin
-                def on(self):
-                    GPIO.output(self.pin, GPIO.HIGH)
-                def off(self):
-                    GPIO.output(self.pin, GPIO.LOW)
-            _ir_ctrl = _RPICtrl(int(IR_GPIO_PIN))
-        except Exception:
-            _ir_ctrl = None
-
-# Night-mode tuning environment variables
-NIGHT_BRIGHTNESS_THRESHOLD = float(os.getenv("NIGHT_BRIGHTNESS_THRESHOLD", "40"))
-# If set, these will be applied via picam2.set_controls() when night mode is entered.
-NIGHT_EXPOSURE_US = os.getenv("NIGHT_EXPOSURE_US")
-NIGHT_ANALOG_GAIN = os.getenv("NIGHT_ANALOG_GAIN")
-NIGHT_FORCE_GRAYSCALE = os.getenv("NIGHT_FORCE_GRAYSCALE", "1") in ("1", "true", "True")
+try:
+    import cv2
+    _cv2_available = True
+except Exception:
+    _cv2_available = False
 
 app = Flask(__name__)
 
-# Configure Picamera2
-picam2 = Picamera2()
-# Make stream settings configurable via environment variables so you can tune
-# performance without editing the script. Default to 1080p as requested.
-STREAM_WIDTH = int(os.getenv("STREAM_WIDTH", "1920"))
-STREAM_HEIGHT = int(os.getenv("STREAM_HEIGHT", "1080"))
-# JPEG quality (1-95); lower => smaller images and less CPU/time to encode
-JPEG_QUALITY = int(os.getenv("JPEG_QUALITY", "70"))
-# Small sleep between frames to avoid pegging a single-core CPU. Set to 0 to
-# rely on the camera frame timing. Lower -> higher FPS but more CPU.
-FRAME_SLEEP = float(os.getenv("FRAME_SLEEP", "0.0"))
-# Optionally target a fixed FPS. If set, this will override FRAME_SLEEP and
-# set it to 1/TARGET_FPS. Note this only throttles the loop and cannot make
-# the camera or encoding run faster than hardware limits.
-TARGET_FPS = os.getenv("TARGET_FPS")
-if TARGET_FPS:
-    try:
-        tf = float(TARGET_FPS)
-        if tf > 0:
-            FRAME_SLEEP = 1.0 / tf
-    except Exception:
-        pass
+# Hard-coded stream parameters
+STREAM_WIDTH = 1920
+STREAM_HEIGHT = 1080
+TARGET_FPS = 30.0
+JPEG_QUALITY = 80
 
+# Derived sleep to aim for target FPS. This delays between frames; it cannot
+# make the camera or encoding faster than their capabilities, but it will
+# throttle the loop to avoid spinning faster than 30fps.
+FRAME_SLEEP = 1.0 / TARGET_FPS
+
+# Configure Picamera2 for 1080p RGB
+picam2 = Picamera2()
 video_config = picam2.create_video_configuration(main={"size": (STREAM_WIDTH, STREAM_HEIGHT), "format": "RGB888"})
 picam2.configure(video_config)
 picam2.start()
 
-# Note: AWB / auto-white-balance related tweaks were removed per user request.
-
 frame_lock = threading.Lock()
-controls_lock = threading.Lock()
+
 
 def generate_mjpeg():
+    """Yield multipart MJPEG frames forever.
+
+    This generator captures from Picamera2, converts to RGB if needed,
+    encodes JPEG with Pillow, and yields the multipart frame. It sleeps
+    FRAME_SLEEP between frames to aim for TARGET_FPS.
     """
-    Generator that yields MJPEG frames (multipart/x-mixed-replace).
-    Implements simple day/night auto-switch based on frame brightness. When
-    dark, optional IR GPIO is enabled and optional camera controls applied.
-    """
-    night_mode = False
     while True:
-        # Capture an RGB array from the camera
         with frame_lock:
             frame = picam2.capture_array("main")
 
-        # Estimate brightness to decide day/night
-        try:
-            if hasattr(frame, 'ndim') and frame.ndim == 3 and frame.shape[2] >= 3:
-                rgb = frame[..., :3].astype(np.float32)
-                lum = 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]
-                mean_lum = float(lum.mean())
+        # Prefer OpenCV's C-based JPEG encoder when available (faster). Picamera2
+        # often returns BGR-ordered arrays; cv2.imencode expects BGR, so pass
+        # the raw frame directly. If OpenCV isn't available or encoding fails,
+        # fall back to Pillow (convert BGR->RGB for correct colors).
+        jpg = None
+        if _cv2_available and hasattr(frame, "ndim") and frame.ndim == 3 and frame.shape[2] == 3:
+            try:
+                # cv2.imencode returns (retval, buffer)
+                ret, buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY])
+                if ret:
+                    jpg = buf.tobytes()
+            except Exception:
+                jpg = None
+
+        if jpg is None:
+            # Pillow path: convert to RGB then encode
+            if hasattr(frame, "ndim") and frame.ndim == 3 and frame.shape[2] == 3:
+                rgb_frame = frame[..., ::-1]
             else:
-                mean_lum = float(frame.mean())
-        except Exception:
-            mean_lum = 255.0
-
-        is_dark = mean_lum < NIGHT_BRIGHTNESS_THRESHOLD
-        if is_dark and not night_mode:
-            night_mode = True
-            if _ir_ctrl:
-                try:
-                    _ir_ctrl.on()
-                except Exception:
-                    pass
-            night_controls = {}
-            if NIGHT_EXPOSURE_US:
-                try:
-                    night_controls['ExposureTime'] = int(NIGHT_EXPOSURE_US)
-                except Exception:
-                    pass
-            if NIGHT_ANALOG_GAIN:
-                try:
-                    night_controls['AnalogueGain'] = float(NIGHT_ANALOG_GAIN)
-                except Exception:
-                    pass
-            if night_controls:
-                try:
-                    with controls_lock:
-                        picam2.set_controls(night_controls)
-                except Exception:
-                    pass
-        elif not is_dark and night_mode:
-            night_mode = False
-            if _ir_ctrl:
-                try:
-                    _ir_ctrl.off()
-                except Exception:
-                    pass
-            try:
-                with controls_lock:
-                    picam2.set_controls({})
-            except Exception:
-                pass
-
-        # Convert numpy array to JPEG bytes via PIL
-        # libcamera/Picamera2 can return frames in BGR order even when format is RGB888.
-        if hasattr(frame, 'ndim') and frame.ndim == 3 and frame.shape[2] == 3:
-            rgb_frame = frame[..., ::-1]
-        else:
-            rgb_frame = frame
-
-        if night_mode and NIGHT_FORCE_GRAYSCALE:
-            try:
-                img = Image.fromarray(rgb_frame).convert('L').convert('RGB')
-            except Exception:
-                img = Image.fromarray(rgb_frame)
-        else:
+                rgb_frame = frame
             img = Image.fromarray(rgb_frame)
+            buf = BytesIO()
+            img.save(buf, format="JPEG", quality=JPEG_QUALITY)
+            jpg = buf.getvalue()
 
-        buf = BytesIO()
-        img.save(buf, format="JPEG", quality=JPEG_QUALITY)
-        jpg = buf.getvalue()
-        # Yield multipart frame
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + jpg + b'\r\n')
+        yield (b"--frame\r\n"
+               b"Content-Type: image/jpeg\r\n\r\n" + jpg + b"\r\n")
 
-        # small sleep to avoid pegging CPU. Tune FRAME_SLEEP or set to 0 to rely on
-        # camera frame timing. You can override via environment variable, e.g.: 
-        # FRAME_SLEEP=0.0 python3 app.py
-        if FRAME_SLEEP > 0:
-            time.sleep(FRAME_SLEEP)
+        # Throttle to target FPS
+        time.sleep(FRAME_SLEEP)
+
 
 @app.route("/")
 def index():
-    # Simple page that shows the stream
     return render_template("index.html")
+
 
 @app.route("/stream")
 def stream():
-    return Response(generate_mjpeg(),
-                    mimetype="multipart/x-mixed-replace; boundary=frame")
+    return Response(generate_mjpeg(), mimetype="multipart/x-mixed-replace; boundary=frame")
+
 
 if __name__ == "__main__":
     try:
-        # listen on all interfaces so you can open from other machines
         app.run(host="0.0.0.0", port=5000, threaded=True)
     finally:
         try:
             picam2.stop()
         except Exception:
             pass
+
+
