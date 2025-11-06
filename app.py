@@ -12,6 +12,40 @@ from io import BytesIO
 import threading
 import time
 import os
+import numpy as np
+
+# Optional GPIO control for IR illuminator. If you wire an IR LED to a GPIO pin
+# (with proper transistor/driver) set the environment variable IR_GPIO_PIN to
+# the pin number (BCM). The code will try gpiozero first, then RPi.GPIO.
+IR_GPIO_PIN = os.getenv("IR_GPIO_PIN")
+_ir_ctrl = None
+if IR_GPIO_PIN:
+    try:
+        from gpiozero import DigitalOutputDevice
+        _ir_ctrl = DigitalOutputDevice(int(IR_GPIO_PIN))
+    except Exception:
+        try:
+            import RPi.GPIO as GPIO
+            GPIO.setmode(GPIO.BCM)
+            GPIO.setup(int(IR_GPIO_PIN), GPIO.OUT)
+            GPIO.output(int(IR_GPIO_PIN), GPIO.LOW)
+            class _RPICtrl:
+                def __init__(self, pin):
+                    self.pin = pin
+                def on(self):
+                    GPIO.output(self.pin, GPIO.HIGH)
+                def off(self):
+                    GPIO.output(self.pin, GPIO.LOW)
+            _ir_ctrl = _RPICtrl(int(IR_GPIO_PIN))
+        except Exception:
+            _ir_ctrl = None
+
+# Night-mode tuning environment variables
+NIGHT_BRIGHTNESS_THRESHOLD = float(os.getenv("NIGHT_BRIGHTNESS_THRESHOLD", "40"))
+# If set, these will be applied via picam2.set_controls() when night mode is entered.
+NIGHT_EXPOSURE_US = os.getenv("NIGHT_EXPOSURE_US")
+NIGHT_ANALOG_GAIN = os.getenv("NIGHT_ANALOG_GAIN")
+NIGHT_FORCE_GRAYSCALE = os.getenv("NIGHT_FORCE_GRAYSCALE", "1") in ("1", "true", "True")
 
 app = Flask(__name__)
 
@@ -32,32 +66,91 @@ picam2.configure(video_config)
 picam2.start()
 
 frame_lock = threading.Lock()
+controls_lock = threading.Lock()
 
 def generate_mjpeg():
     """
     Generator that yields MJPEG frames (multipart/x-mixed-replace).
+    Implements simple day/night auto-switch based on frame brightness. When
+    dark, optional IR GPIO is enabled and optional camera controls applied.
     """
+    night_mode = False
     while True:
         # Capture an RGB array from the camera
         with frame_lock:
             frame = picam2.capture_array("main")
+
+        # Estimate brightness to decide day/night
+        try:
+            if hasattr(frame, 'ndim') and frame.ndim == 3 and frame.shape[2] >= 3:
+                rgb = frame[..., :3].astype(np.float32)
+                lum = 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]
+                mean_lum = float(lum.mean())
+            else:
+                mean_lum = float(frame.mean())
+        except Exception:
+            mean_lum = 255.0
+
+        is_dark = mean_lum < NIGHT_BRIGHTNESS_THRESHOLD
+        if is_dark and not night_mode:
+            night_mode = True
+            if _ir_ctrl:
+                try:
+                    _ir_ctrl.on()
+                except Exception:
+                    pass
+            night_controls = {}
+            if NIGHT_EXPOSURE_US:
+                try:
+                    night_controls['ExposureTime'] = int(NIGHT_EXPOSURE_US)
+                except Exception:
+                    pass
+            if NIGHT_ANALOG_GAIN:
+                try:
+                    night_controls['AnalogueGain'] = float(NIGHT_ANALOG_GAIN)
+                except Exception:
+                    pass
+            if night_controls:
+                try:
+                    with controls_lock:
+                        picam2.set_controls(night_controls)
+                except Exception:
+                    pass
+        elif not is_dark and night_mode:
+            night_mode = False
+            if _ir_ctrl:
+                try:
+                    _ir_ctrl.off()
+                except Exception:
+                    pass
+            try:
+                with controls_lock:
+                    picam2.set_controls({})
+            except Exception:
+                pass
+
         # Convert numpy array to JPEG bytes via PIL
         # libcamera/Picamera2 can return frames in BGR order even when format is RGB888.
-        # That will make the image appear purplish (red/blue swapped). Ensure we pass
-        # an RGB-ordered array to PIL by swapping channels when necessary.
         if hasattr(frame, 'ndim') and frame.ndim == 3 and frame.shape[2] == 3:
-            # Swap BGR -> RGB
             rgb_frame = frame[..., ::-1]
         else:
             rgb_frame = frame
 
-        img = Image.fromarray(rgb_frame)
+        if night_mode and NIGHT_FORCE_GRAYSCALE:
+            try:
+                img = Image.fromarray(rgb_frame).convert('L').convert('RGB')
+            except Exception:
+                img = Image.fromarray(rgb_frame)
+        else:
+            img = Image.fromarray(rgb_frame)
+
         buf = BytesIO()
         img.save(buf, format="JPEG", quality=JPEG_QUALITY)
         jpg = buf.getvalue()
         # Yield multipart frame
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + jpg + b'\r\n')
+
         # small sleep to avoid pegging CPU. Tune FRAME_SLEEP or set to 0 to rely on
         # camera frame timing. You can override via environment variable, e.g.: 
         # FRAME_SLEEP=0.0 python3 app.py
