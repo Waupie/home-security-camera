@@ -65,6 +65,26 @@ video_config = picam2.create_video_configuration(main={"size": (STREAM_WIDTH, ST
 picam2.configure(video_config)
 picam2.start()
 
+# Optionally enable AWB greyworld behaviour if requested via env var. Some
+# libcamera tunings expose `awb_auto_is_greyworld` (lower-level) or accept
+# different control names — try a few safe attempts and ignore failures.
+AWB_AUTO_GREYWORLD = os.getenv("AWB_AUTO_GREYWORLD", "0") in ("1", "true", "True")
+if AWB_AUTO_GREYWORLD:
+    try:
+        # try the common lowercase control name
+        picam2.set_controls({"awb_auto_is_greyworld": 1})
+    except Exception:
+        try:
+            # try an alternate camel-case name some setups may expose
+            picam2.set_controls({"AwbAutoIsGreyWorld": 1})
+        except Exception:
+            try:
+                # fallback: try setting an AwbMode to a guessed value
+                picam2.set_controls({"AwbMode": "greyworld"})
+            except Exception:
+                # If none of these are supported, silently continue.
+                pass
+
 frame_lock = threading.Lock()
 controls_lock = threading.Lock()
 
