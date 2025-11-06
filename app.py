@@ -70,19 +70,21 @@ picam2.start()
 # different control names — try a few safe attempts and ignore failures.
 AWB_AUTO_GREYWORLD = os.getenv("AWB_AUTO_GREYWORLD", "0") in ("1", "true", "True")
 if AWB_AUTO_GREYWORLD:
+    # Try setting known integer-valued controls only. Avoid setting string-valued
+    # controls (e.g. 'AwbMode': 'greyworld') because some picamera2/libcamera
+    # bindings will accept the value but later fail when the control is applied
+    # in the C++ layer (causing the runtime error you saw). Wrap attempts so
+    # failures are logged but won't crash the server.
     try:
-        # try the common lowercase control name
         picam2.set_controls({"awb_auto_is_greyworld": 1})
     except Exception:
         try:
-            # try an alternate camel-case name some setups may expose
             picam2.set_controls({"AwbAutoIsGreyWorld": 1})
         except Exception:
+            # Couldn't enable greyworld with known integer controls; warn once.
             try:
-                # fallback: try setting an AwbMode to a guessed value
-                picam2.set_controls({"AwbMode": "greyworld"})
+                print("[WARN] AWB_AUTO_GREYWORLD requested but no known integer control succeeded.")
             except Exception:
-                # If none of these are supported, silently continue.
                 pass
 
 frame_lock = threading.Lock()
