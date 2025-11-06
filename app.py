@@ -11,12 +11,23 @@ from PIL import Image
 from io import BytesIO
 import threading
 import time
+import os
 
 app = Flask(__name__)
 
 # Configure Picamera2
 picam2 = Picamera2()
-video_config = picam2.create_video_configuration(main={"size": (1920, 1080), "format": "RGB888"})
+# Make stream settings configurable via environment variables so you can tune
+# performance without editing the script.
+STREAM_WIDTH = int(os.getenv("STREAM_WIDTH", "1280"))
+STREAM_HEIGHT = int(os.getenv("STREAM_HEIGHT", "720"))
+# JPEG quality (1-95); lower => smaller images and less CPU/time to encode
+JPEG_QUALITY = int(os.getenv("JPEG_QUALITY", "70"))
+# Small sleep between frames to avoid pegging a single-core CPU. Set to 0 to
+# rely on the camera frame timing. Lower -> higher FPS but more CPU.
+FRAME_SLEEP = float(os.getenv("FRAME_SLEEP", "0.01"))
+
+video_config = picam2.create_video_configuration(main={"size": (STREAM_WIDTH, STREAM_HEIGHT), "format": "RGB888"})
 picam2.configure(video_config)
 picam2.start()
 
@@ -42,13 +53,16 @@ def generate_mjpeg():
 
         img = Image.fromarray(rgb_frame)
         buf = BytesIO()
-        img.save(buf, format="JPEG", quality=80)
+        img.save(buf, format="JPEG", quality=JPEG_QUALITY)
         jpg = buf.getvalue()
         # Yield multipart frame
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + jpg + b'\r\n')
-        # small sleep to avoid pegging CPU, adjust for desired FPS
-        time.sleep(0.03)
+        # small sleep to avoid pegging CPU. Tune FRAME_SLEEP or set to 0 to rely on
+        # camera frame timing. You can override via environment variable, e.g.: 
+        # FRAME_SLEEP=0.0 python3 app.py
+        if FRAME_SLEEP > 0:
+            time.sleep(FRAME_SLEEP)
 
 @app.route("/")
 def index():
