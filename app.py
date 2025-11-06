@@ -52,40 +52,31 @@ app = Flask(__name__)
 # Configure Picamera2
 picam2 = Picamera2()
 # Make stream settings configurable via environment variables so you can tune
-# performance without editing the script.
-STREAM_WIDTH = int(os.getenv("STREAM_WIDTH", "1280"))
-STREAM_HEIGHT = int(os.getenv("STREAM_HEIGHT", "720"))
+# performance without editing the script. Default to 1080p as requested.
+STREAM_WIDTH = int(os.getenv("STREAM_WIDTH", "1920"))
+STREAM_HEIGHT = int(os.getenv("STREAM_HEIGHT", "1080"))
 # JPEG quality (1-95); lower => smaller images and less CPU/time to encode
 JPEG_QUALITY = int(os.getenv("JPEG_QUALITY", "70"))
 # Small sleep between frames to avoid pegging a single-core CPU. Set to 0 to
 # rely on the camera frame timing. Lower -> higher FPS but more CPU.
-FRAME_SLEEP = float(os.getenv("FRAME_SLEEP", "0.01"))
+FRAME_SLEEP = float(os.getenv("FRAME_SLEEP", "0.0"))
+# Optionally target a fixed FPS. If set, this will override FRAME_SLEEP and
+# set it to 1/TARGET_FPS. Note this only throttles the loop and cannot make
+# the camera or encoding run faster than hardware limits.
+TARGET_FPS = os.getenv("TARGET_FPS")
+if TARGET_FPS:
+    try:
+        tf = float(TARGET_FPS)
+        if tf > 0:
+            FRAME_SLEEP = 1.0 / tf
+    except Exception:
+        pass
 
 video_config = picam2.create_video_configuration(main={"size": (STREAM_WIDTH, STREAM_HEIGHT), "format": "RGB888"})
 picam2.configure(video_config)
 picam2.start()
 
-# Optionally enable AWB greyworld behaviour if requested via env var. Some
-# libcamera tunings expose `awb_auto_is_greyworld` (lower-level) or accept
-# different control names — try a few safe attempts and ignore failures.
-AWB_AUTO_GREYWORLD = os.getenv("AWB_AUTO_GREYWORLD", "0") in ("1", "true", "True")
-if AWB_AUTO_GREYWORLD:
-    # Try setting known integer-valued controls only. Avoid setting string-valued
-    # controls (e.g. 'AwbMode': 'greyworld') because some picamera2/libcamera
-    # bindings will accept the value but later fail when the control is applied
-    # in the C++ layer (causing the runtime error you saw). Wrap attempts so
-    # failures are logged but won't crash the server.
-    try:
-        picam2.set_controls({"awb_auto_is_greyworld": 1})
-    except Exception:
-        try:
-            picam2.set_controls({"AwbAutoIsGreyWorld": 1})
-        except Exception:
-            # Couldn't enable greyworld with known integer controls; warn once.
-            try:
-                print("[WARN] AWB_AUTO_GREYWORLD requested but no known integer control succeeded.")
-            except Exception:
-                pass
+# Note: AWB / auto-white-balance related tweaks were removed per user request.
 
 frame_lock = threading.Lock()
 controls_lock = threading.Lock()
