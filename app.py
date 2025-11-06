@@ -54,30 +54,10 @@ def generate_mjpeg():
         with frame_lock:
             frame = picam2.capture_array("main")
 
-        # Prefer OpenCV's C-based JPEG encoder when available (faster). Picamera2
-        # often returns BGR-ordered arrays; cv2.imencode expects BGR, so pass
-        # the raw frame directly. If OpenCV isn't available or encoding fails,
-        # fall back to Pillow (convert BGR->RGB for correct colors).
-        jpg = None
-        if _cv2_available and hasattr(frame, "ndim") and frame.ndim == 3 and frame.shape[2] == 3:
-            try:
-                # cv2.imencode returns (retval, buffer)
-                ret, buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY])
-                if ret:
-                    jpg = buf.tobytes()
-            except Exception:
-                jpg = None
-
-        if jpg is None:
-            # Pillow path: convert to RGB then encode
-            if hasattr(frame, "ndim") and frame.ndim == 3 and frame.shape[2] == 3:
-                rgb_frame = frame[..., ::-1]
-            else:
-                rgb_frame = frame
-            img = Image.fromarray(rgb_frame)
-            buf = BytesIO()
-            img.save(buf, format="JPEG", quality=JPEG_QUALITY)
-            jpg = buf.getvalue()
+        # Encode the captured frame to JPEG. Prefer OpenCV for speed, fall back
+        # to Pillow for portability. The encoding logic is also used by the
+        # /snapshot endpoint below so it's extracted to a small helper.
+        jpg = encode_jpeg(frame)
 
         yield (b"--frame\r\n"
                b"Content-Type: image/jpeg\r\n\r\n" + jpg + b"\r\n")
@@ -94,6 +74,52 @@ def index():
 @app.route("/stream")
 def stream():
     return Response(generate_mjpeg(), mimetype="multipart/x-mixed-replace; boundary=frame")
+
+
+def encode_jpeg(frame):
+    """Encode a single camera frame (numpy array) to JPEG bytes.
+
+    Prefer OpenCV's encoder when available; otherwise convert to RGB and
+    encode with Pillow.
+    """
+    # Try OpenCV C encoder first (expects BGR ordering)
+    if _cv2_available and hasattr(frame, "ndim") and getattr(frame, "ndim", 0) == 3 and frame.shape[2] == 3:
+        try:
+            ret, buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY])
+            if ret:
+                return buf.tobytes()
+        except Exception:
+            pass
+
+    # Pillow path: convert BGR->RGB if needed and save to BytesIO
+    if hasattr(frame, "ndim") and getattr(frame, "ndim", 0) == 3 and frame.shape[2] == 3:
+        rgb_frame = frame[..., ::-1]
+    else:
+        rgb_frame = frame
+    img = Image.fromarray(rgb_frame)
+    buf = BytesIO()
+    img.save(buf, format="JPEG", quality=JPEG_QUALITY)
+    return buf.getvalue()
+
+
+@app.route('/snapshot')
+def snapshot():
+    """Return a single JPEG snapshot and log the captured frame shape.
+
+    Use this to inspect the actual pixels produced by the camera (helps
+    determine whether Picamera2 is cropping/zooming the sensor output).
+    """
+    with frame_lock:
+        frame = picam2.capture_array('main')
+
+    # Log shape to help diagnose cropping/zoom (e.g. (height, width, channels))
+    try:
+        app.logger.info('Snapshot frame shape: %s', getattr(frame, 'shape', 'unknown'))
+    except Exception:
+        print('Snapshot captured, shape unknown')
+
+    jpg = encode_jpeg(frame)
+    return Response(jpg, mimetype='image/jpeg')
 
 
 if __name__ == "__main__":
