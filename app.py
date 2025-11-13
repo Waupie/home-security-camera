@@ -184,12 +184,15 @@ def _recorder_thread(duration_seconds, out_path):
         frame_idx = 0
 
     try:
+        frames_written = 0
+        start_time = time.time()
         while time.time() < end_time:
             with frame_lock:
                 f = picam2.capture_array('main')
             if _cv2_available and writer is not None:
                 try:
                     writer.write(f)
+                    frames_written += 1
                 except Exception:
                     pass
             else:
@@ -199,6 +202,7 @@ def _recorder_thread(duration_seconds, out_path):
                     fname = os.path.join(jpeg_dir, f'frame_{frame_idx:05d}.jpg')
                     img.save(fname, format='JPEG', quality=JPEG_QUALITY)
                     frame_idx += 1
+                    frames_written += 1
                 except Exception:
                     pass
             # sleep a small amount to avoid oversampling and to roughly align with
@@ -235,6 +239,15 @@ def _recorder_thread(duration_seconds, out_path):
         with recording_lock:
             is_recording = False
             last_recording = os.path.basename(out_path)
+        # Log recording metrics for diagnostics
+        try:
+            end_time_actual = time.time()
+            elapsed = end_time_actual - start_time
+            used_fps = fps_est if _cv2_available else (frame_idx / max(1e-6, elapsed))
+            app.logger.info('Recording finished: file=%s frames=%d elapsed=%.2fs fps_used=%.2f expected_dur=%.2fs',
+                            os.path.basename(out_path), frames_written, elapsed, used_fps, frames_written / max(1e-6, used_fps))
+        except Exception:
+            pass
 
 
 @app.route('/record', methods=['POST'])
