@@ -9,12 +9,15 @@ stream that you don't need to change.
 View in your browser at:
     http://<raspberry-pi-ip>:5000/
 """
-from flask import Flask, Response, render_template
+from flask import Flask, Response, render_template, jsonify, send_from_directory, request
 from picamera2 import Picamera2
 from PIL import Image
 from io import BytesIO
 import threading
 import time
+import os
+from datetime import datetime
+import zipfile
 try:
     import cv2
     _cv2_available = True
@@ -41,6 +44,14 @@ picam2.configure(video_config)
 picam2.start()
 
 frame_lock = threading.Lock()
+
+# Recording state
+recording_lock = threading.Lock()
+is_recording = False
+last_recording = None
+RECORD_SECONDS = 10
+RECORDINGS_DIR = os.path.join(os.getcwd(), 'recordings')
+os.makedirs(RECORDINGS_DIR, exist_ok=True)
 
 
 def generate_mjpeg():
@@ -120,6 +131,111 @@ def snapshot():
 
     jpg = encode_jpeg(frame)
     return Response(jpg, mimetype='image/jpeg')
+
+
+def _recorder_thread(duration_seconds, out_path):
+    """Background thread that records `duration_seconds` seconds from the
+    Picamera2 feed and writes to out_path. Uses OpenCV VideoWriter when
+    available, otherwise saves sequential JPEGs and leaves them in a folder.
+    """
+    global is_recording, last_recording
+    end_time = time.time() + duration_seconds
+
+    if _cv2_available:
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        # OpenCV expects (width, height)
+        writer = cv2.VideoWriter(out_path, fourcc, TARGET_FPS, (STREAM_WIDTH, STREAM_HEIGHT))
+    else:
+        # create directory for JPEGs
+        jpeg_dir = out_path + '_frames'
+        os.makedirs(jpeg_dir, exist_ok=True)
+        writer = None
+        frame_idx = 0
+
+    try:
+        while time.time() < end_time:
+            with frame_lock:
+                f = picam2.capture_array('main')
+            if _cv2_available and writer is not None:
+                try:
+                    writer.write(f)
+                except Exception:
+                    pass
+            else:
+                # save jpeg
+                try:
+                    img = Image.fromarray(f[..., ::-1])
+                    fname = os.path.join(jpeg_dir, f'frame_{frame_idx:05d}.jpg')
+                    img.save(fname, format='JPEG', quality=JPEG_QUALITY)
+                    frame_idx += 1
+                except Exception:
+                    pass
+            # sleep small amount to yield; capture_array is the limiting factor
+            time.sleep(max(0, FRAME_SLEEP * 0.9))
+    finally:
+        if writer is not None:
+            try:
+                writer.release()
+            except Exception:
+                pass
+        else:
+            # Package frames into a zip archive for easy download
+            try:
+                with zipfile.ZipFile(out_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+                    for root, _, files in os.walk(jpeg_dir):
+                        for fname in sorted(files):
+                            path = os.path.join(root, fname)
+                            arcname = os.path.relpath(path, jpeg_dir)
+                            zf.write(path, arcname=arcname)
+                # Optionally remove the frames directory
+                for root, _, files in os.walk(jpeg_dir, topdown=False):
+                    for fname in files:
+                        try:
+                            os.remove(os.path.join(root, fname))
+                        except Exception:
+                            pass
+                    try:
+                        os.rmdir(root)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        with recording_lock:
+            is_recording = False
+            last_recording = os.path.basename(out_path)
+
+
+@app.route('/record', methods=['POST'])
+def record():
+    """Start a 10-second recording in the background. Returns JSON with status."""
+    global is_recording, last_recording
+    with recording_lock:
+        if is_recording:
+            return jsonify({'status': 'busy'}), 409
+        is_recording = True
+
+    ts = datetime.utcnow().strftime('%Y%m%d-%H%M%S')
+    filename = f'recording-{ts}.mp4' if _cv2_available else f'recording-{ts}.zip'
+    out_path = os.path.join(RECORDINGS_DIR, filename)
+
+    # Start background thread
+    t = threading.Thread(target=_recorder_thread, args=(RECORD_SECONDS, out_path), daemon=True)
+    t.start()
+
+    return jsonify({'status': 'started', 'duration': RECORD_SECONDS})
+
+
+@app.route('/last_recording')
+def get_last_recording():
+    """Return the filename of the last completed recording (if any)."""
+    if last_recording:
+        return jsonify({'filename': last_recording})
+    return jsonify({'filename': None})
+
+
+@app.route('/recordings/<path:filename>')
+def recordings(filename):
+    return send_from_directory(RECORDINGS_DIR, filename, as_attachment=True)
 
 
 if __name__ == "__main__":
