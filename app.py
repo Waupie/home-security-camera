@@ -142,9 +142,38 @@ def _recorder_thread(duration_seconds, out_path):
     end_time = time.time() + duration_seconds
 
     if _cv2_available:
+        # Warm up a few frames to estimate actual camera FPS so the resulting
+        # MP4 uses a frame rate that matches the capture rate (avoids speedup).
+        warm_frames = []
+        warm_times = []
+        while len(warm_frames) < 5 and time.time() < end_time:
+            with frame_lock:
+                f = picam2.capture_array('main')
+            # store a copy to avoid potential reuse issues
+            try:
+                warm_frames.append(f.copy())
+            except Exception:
+                warm_frames.append(f)
+            warm_times.append(time.time())
+
+        if len(warm_times) >= 2:
+            elapsed = warm_times[-1] - warm_times[0]
+            fps_est = len(warm_frames) / max(1e-3, elapsed)
+        else:
+            fps_est = TARGET_FPS
+
+        # Cap estimated fps to a reasonable range
+        fps_est = max(1.0, min(fps_est, max(TARGET_FPS, fps_est)))
+
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         # OpenCV expects (width, height)
-        writer = cv2.VideoWriter(out_path, fourcc, TARGET_FPS, (STREAM_WIDTH, STREAM_HEIGHT))
+        writer = cv2.VideoWriter(out_path, fourcc, float(fps_est), (STREAM_WIDTH, STREAM_HEIGHT))
+        # Write warm frames first
+        for wf in warm_frames:
+            try:
+                writer.write(wf)
+            except Exception:
+                pass
     else:
         # create directory for JPEGs
         jpeg_dir = out_path + '_frames'
@@ -170,8 +199,8 @@ def _recorder_thread(duration_seconds, out_path):
                     frame_idx += 1
                 except Exception:
                     pass
-            # sleep small amount to yield; capture_array is the limiting factor
-            time.sleep(max(0, FRAME_SLEEP * 0.9))
+            # capture_array is the limiting factor; don't sleep here so we write
+            # frames as fast as Picamera2 provides them.
     finally:
         if writer is not None:
             try:
