@@ -146,10 +146,11 @@ def _recorder_thread(duration_seconds, out_path):
         # MP4 uses a frame rate that matches the capture rate (avoids speedup).
         warm_frames = []
         warm_times = []
-        while len(warm_frames) < 5 and time.time() < end_time:
+        warm_start = time.time()
+        # collect up to 10 warm frames but for at least 0.5s to get a stable sample
+        while (time.time() - warm_start) < 0.5 and len(warm_frames) < 10 and time.time() < end_time:
             with frame_lock:
                 f = picam2.capture_array('main')
-            # store a copy to avoid potential reuse issues
             try:
                 warm_frames.append(f.copy())
             except Exception:
@@ -158,12 +159,13 @@ def _recorder_thread(duration_seconds, out_path):
 
         if len(warm_times) >= 2:
             elapsed = warm_times[-1] - warm_times[0]
-            fps_est = len(warm_frames) / max(1e-3, elapsed)
+            elapsed = max(elapsed, 0.5)
+            fps_est = len(warm_frames) / elapsed
         else:
             fps_est = TARGET_FPS
 
-        # Cap estimated fps to a reasonable range
-        fps_est = max(1.0, min(fps_est, max(TARGET_FPS, fps_est)))
+        # Don't overestimate beyond TARGET_FPS (avoid producing too-short files)
+        fps_est = max(1.0, min(fps_est, TARGET_FPS))
 
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         # OpenCV expects (width, height)
@@ -199,8 +201,9 @@ def _recorder_thread(duration_seconds, out_path):
                     frame_idx += 1
                 except Exception:
                     pass
-            # capture_array is the limiting factor; don't sleep here so we write
-            # frames as fast as Picamera2 provides them.
+            # sleep a small amount to avoid oversampling and to roughly align with
+            # the target FPS (capture_array itself may block and dominate timing)
+            time.sleep(max(0, FRAME_SLEEP * 0.9))
     finally:
         if writer is not None:
             try:
