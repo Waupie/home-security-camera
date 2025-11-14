@@ -143,20 +143,29 @@ def _recorder_thread(duration_seconds, out_path):
     # Use Picamera2's hardware H.264 encoder for efficient, real-time recording.
     # This produces an MP4 file at true 30fps without the speedup issues.
     try:
-        # Create a video encoder configuration for recording
-        encoder = picam2.create_encoder('h264', 10000000)  # 10Mbps bitrate
-        picam2.start_recording(encoder, out_path)
+        from picamera2.encoders import H264Encoder
+        from picamera2.outputs import FfmpegOutput
+        
+        # Create H.264 encoder with high bitrate for quality
+        encoder = H264Encoder(bitrate=10000000)
+        
+        # Use FfmpegOutput to wrap the raw H.264 stream into MP4 container
+        output = FfmpegOutput(out_path)
+        
         app.logger.info('Recording started: file=%s duration=%ds', os.path.basename(out_path), duration_seconds)
+        picam2.start_encoder(encoder, output)
         
         # Sleep for the recording duration
         time.sleep(duration_seconds)
         
         # Stop recording
-        picam2.stop_recording()
+        picam2.stop_encoder()
         elapsed = time.time() - start_time
         app.logger.info('Recording finished: file=%s elapsed=%.2fs', os.path.basename(out_path), elapsed)
     except Exception as e:
         app.logger.error('Recording failed: %s', e)
+        import traceback
+        traceback.print_exc()
     finally:
         with recording_lock:
             is_recording = False
