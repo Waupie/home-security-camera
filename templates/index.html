@@ -22,6 +22,13 @@ html name=templates/index.html
 
       <p id="status" style="margin-top:12px;color:#bbb">Status: waiting for stream...</p>
 
+      <div style="margin-top:16px;">
+        <button id="recordBtn">Record 10s</button>
+        <span id="recordStatus" style="margin-left:12px;color:#f55"></span>
+      </div>
+
+      <div id="recordingLink" style="margin-top:12px;"></div>
+
       <script>
         // Small compatibility helper: keep the <img> primary, but show iframe fallback on error.
         (function(){
@@ -54,6 +61,46 @@ html name=templates/index.html
               showFallback();
             }
           }, 4000);
+        })();
+
+        // Recording UI
+        (function(){
+          const btn = document.getElementById('recordBtn');
+          const status = document.getElementById('recordStatus');
+          const linkBox = document.getElementById('recordingLink');
+
+          async function startRecord(){
+            status.textContent = 'Starting...';
+            btn.disabled = true;
+            linkBox.innerHTML = '';
+            try{
+              const resp = await fetch('/record', { method: 'POST' });
+              if (!resp.ok) throw new Error('busy');
+              const data = await resp.json();
+              status.textContent = `Recording ${data.duration}s...`;
+              // wait duration + small buffer then fetch last_recording
+              setTimeout(async ()=>{
+                status.textContent = 'Finalizing...';
+                const r = await fetch('/last_recording');
+                const j = await r.json();
+                if (j.filename){
+                  const a = document.createElement('a');
+                  a.href = '/recordings/' + encodeURIComponent(j.filename);
+                  a.textContent = 'Download: ' + j.filename;
+                  linkBox.appendChild(a);
+                  status.textContent = 'Recording ready';
+                } else {
+                  status.textContent = 'No recording found';
+                }
+                btn.disabled = false;
+              }, (10 + 1) * 1000);
+            }catch(e){
+              status.textContent = 'Recorder busy';
+              btn.disabled = false;
+            }
+          }
+
+          btn.addEventListener('click', startRecord);
         })();
       </script>
     </div>

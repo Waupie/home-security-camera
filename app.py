@@ -9,12 +9,15 @@ stream that you don't need to change.
 View in your browser at:
     http://<raspberry-pi-ip>:5000/
 """
-from flask import Flask, Response, render_template
+from flask import Flask, Response, render_template, jsonify, send_from_directory, request
 from picamera2 import Picamera2
 from PIL import Image
 from io import BytesIO
 import threading
 import time
+import os
+from datetime import datetime
+import zipfile
 try:
     import cv2
     _cv2_available = True
@@ -41,6 +44,14 @@ picam2.configure(video_config)
 picam2.start()
 
 frame_lock = threading.Lock()
+
+# Recording state
+recording_lock = threading.Lock()
+is_recording = False
+last_recording = None
+RECORD_SECONDS = 10
+RECORDINGS_DIR = os.path.join(os.getcwd(), 'recordings')
+os.makedirs(RECORDINGS_DIR, exist_ok=True)
 
 
 def generate_mjpeg():
@@ -122,8 +133,88 @@ def snapshot():
     return Response(jpg, mimetype='image/jpeg')
 
 
+def _recorder_thread(duration_seconds, out_path):
+    """Background thread that records `duration_seconds` seconds from the
+    Picamera2 feed using hardware H.264 encoding to produce real-time MP4.
+    """
+    global is_recording, last_recording
+    start_time = time.time()
+    
+    # Use Picamera2's hardware H.264 encoder for efficient, real-time recording.
+    # This produces an MP4 file at true 30fps without the speedup issues.
+    try:
+        from picamera2.encoders import H264Encoder
+        from picamera2.outputs import FfmpegOutput
+        
+        # Create H.264 encoder with high bitrate for quality
+        encoder = H264Encoder(bitrate=10000000)
+        
+        # Use FfmpegOutput to wrap the raw H.264 stream into MP4 container
+        output = FfmpegOutput(out_path)
+        
+        app.logger.info('Recording started: file=%s duration=%ds', os.path.basename(out_path), duration_seconds)
+        picam2.start_encoder(encoder, output)
+        
+        # Sleep for the recording duration
+        time.sleep(duration_seconds)
+        
+        # Stop recording
+        picam2.stop_encoder()
+        elapsed = time.time() - start_time
+        app.logger.info('Recording finished: file=%s elapsed=%.2fs', os.path.basename(out_path), elapsed)
+    except Exception as e:
+        app.logger.error('Recording failed: %s', e)
+        import traceback
+        traceback.print_exc()
+    finally:
+        with recording_lock:
+            is_recording = False
+            last_recording = os.path.basename(out_path)
+
+
+@app.route('/record', methods=['POST'])
+def record():
+    """Start a 10-second recording in the background. Returns JSON with status."""
+    global is_recording, last_recording
+    with recording_lock:
+        if is_recording:
+            return jsonify({'status': 'busy'}), 409
+        is_recording = True
+
+    ts = datetime.utcnow().strftime('%Y%m%d-%H%M%S')
+    filename = f'recording-{ts}.mp4'
+    out_path = os.path.join(RECORDINGS_DIR, filename)
+
+    # Start background thread
+    t = threading.Thread(target=_recorder_thread, args=(RECORD_SECONDS, out_path), daemon=True)
+    t.start()
+
+    return jsonify({'status': 'started', 'duration': RECORD_SECONDS})
+
+
+@app.route('/last_recording')
+def get_last_recording():
+    """Return the filename of the last completed recording (if any)."""
+    if last_recording:
+        return jsonify({'filename': last_recording})
+    return jsonify({'filename': None})
+
+
+@app.route('/recordings/<path:filename>')
+def recordings(filename):
+    # Serve file with streaming and mimetype set for MP4 to avoid buffering issues
+    return send_from_directory(
+        RECORDINGS_DIR, 
+        filename, 
+        as_attachment=True,
+        mimetype='video/mp4',
+        download_name=filename
+    )
+
+
 if __name__ == "__main__":
     try:
+        # threaded=True allows concurrent requests (stream + download at same time)
         app.run(host="0.0.0.0", port=5000, threaded=True)
     finally:
         try:
