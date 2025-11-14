@@ -135,119 +135,32 @@ def snapshot():
 
 def _recorder_thread(duration_seconds, out_path):
     """Background thread that records `duration_seconds` seconds from the
-    Picamera2 feed and writes to out_path. Uses OpenCV VideoWriter when
-    available, otherwise saves sequential JPEGs and leaves them in a folder.
+    Picamera2 feed using hardware H.264 encoding to produce real-time MP4.
     """
     global is_recording, last_recording
-    end_time = time.time() + duration_seconds
-
-    if _cv2_available:
-        # Warm up a few frames to estimate actual camera FPS so the resulting
-        # MP4 uses a frame rate that matches the capture rate (avoids speedup).
-        warm_frames = []
-        warm_times = []
-        warm_start = time.time()
-        # collect up to 10 warm frames but for at least 0.5s to get a stable sample
-        while (time.time() - warm_start) < 0.5 and len(warm_frames) < 10 and time.time() < end_time:
-            with frame_lock:
-                f = picam2.capture_array('main')
-            try:
-                warm_frames.append(f.copy())
-            except Exception:
-                warm_frames.append(f)
-            warm_times.append(time.time())
-
-        if len(warm_times) >= 2:
-            elapsed = warm_times[-1] - warm_times[0]
-            elapsed = max(elapsed, 0.5)
-            fps_est = len(warm_frames) / elapsed
-        else:
-            fps_est = TARGET_FPS
-
-        # Don't overestimate beyond TARGET_FPS (avoid producing too-short files)
-        fps_est = max(1.0, min(fps_est, TARGET_FPS))
-
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        # OpenCV expects (width, height)
-        writer = cv2.VideoWriter(out_path, fourcc, float(fps_est), (STREAM_WIDTH, STREAM_HEIGHT))
-        # Write warm frames first
-        for wf in warm_frames:
-            try:
-                writer.write(wf)
-            except Exception:
-                pass
-    else:
-        # create directory for JPEGs
-        jpeg_dir = out_path + '_frames'
-        os.makedirs(jpeg_dir, exist_ok=True)
-        writer = None
-        frame_idx = 0
-
+    start_time = time.time()
+    
+    # Use Picamera2's hardware H.264 encoder for efficient, real-time recording.
+    # This produces an MP4 file at true 30fps without the speedup issues.
     try:
-        frames_written = 0
-        start_time = time.time()
-        while time.time() < end_time:
-            with frame_lock:
-                f = picam2.capture_array('main')
-            if _cv2_available and writer is not None:
-                try:
-                    writer.write(f)
-                    frames_written += 1
-                except Exception:
-                    pass
-            else:
-                # save jpeg
-                try:
-                    img = Image.fromarray(f[..., ::-1])
-                    fname = os.path.join(jpeg_dir, f'frame_{frame_idx:05d}.jpg')
-                    img.save(fname, format='JPEG', quality=JPEG_QUALITY)
-                    frame_idx += 1
-                    frames_written += 1
-                except Exception:
-                    pass
-            # sleep a small amount to avoid oversampling and to roughly align with
-            # the target FPS (capture_array itself may block and dominate timing)
-            time.sleep(max(0, FRAME_SLEEP * 0.9))
+        # Create a video encoder configuration for recording
+        encoder = picam2.create_encoder('h264', 10000000)  # 10Mbps bitrate
+        picam2.start_recording(encoder, out_path)
+        app.logger.info('Recording started: file=%s duration=%ds', os.path.basename(out_path), duration_seconds)
+        
+        # Sleep for the recording duration
+        time.sleep(duration_seconds)
+        
+        # Stop recording
+        picam2.stop_recording()
+        elapsed = time.time() - start_time
+        app.logger.info('Recording finished: file=%s elapsed=%.2fs', os.path.basename(out_path), elapsed)
+    except Exception as e:
+        app.logger.error('Recording failed: %s', e)
     finally:
-        if writer is not None:
-            try:
-                writer.release()
-            except Exception:
-                pass
-        else:
-            # Package frames into a zip archive for easy download
-            try:
-                with zipfile.ZipFile(out_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
-                    for root, _, files in os.walk(jpeg_dir):
-                        for fname in sorted(files):
-                            path = os.path.join(root, fname)
-                            arcname = os.path.relpath(path, jpeg_dir)
-                            zf.write(path, arcname=arcname)
-                # Optionally remove the frames directory
-                for root, _, files in os.walk(jpeg_dir, topdown=False):
-                    for fname in files:
-                        try:
-                            os.remove(os.path.join(root, fname))
-                        except Exception:
-                            pass
-                    try:
-                        os.rmdir(root)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
         with recording_lock:
             is_recording = False
             last_recording = os.path.basename(out_path)
-        # Log recording metrics for diagnostics
-        try:
-            end_time_actual = time.time()
-            elapsed = end_time_actual - start_time
-            used_fps = fps_est if _cv2_available else (frame_idx / max(1e-6, elapsed))
-            app.logger.info('Recording finished: file=%s frames=%d elapsed=%.2fs fps_used=%.2f expected_dur=%.2fs',
-                            os.path.basename(out_path), frames_written, elapsed, used_fps, frames_written / max(1e-6, used_fps))
-        except Exception:
-            pass
 
 
 @app.route('/record', methods=['POST'])
@@ -260,7 +173,7 @@ def record():
         is_recording = True
 
     ts = datetime.utcnow().strftime('%Y%m%d-%H%M%S')
-    filename = f'recording-{ts}.mp4' if _cv2_available else f'recording-{ts}.zip'
+    filename = f'recording-{ts}.mp4'
     out_path = os.path.join(RECORDINGS_DIR, filename)
 
     # Start background thread
