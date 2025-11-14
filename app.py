@@ -202,11 +202,19 @@ def get_last_recording():
 
 @app.route('/recordings/<path:filename>')
 def recordings(filename):
-    return send_from_directory(RECORDINGS_DIR, filename, as_attachment=True)
+    # Serve file with streaming and mimetype set for MP4 to avoid buffering issues
+    return send_from_directory(
+        RECORDINGS_DIR, 
+        filename, 
+        as_attachment=True,
+        mimetype='video/mp4',
+        download_name=filename
+    )
 
 
 if __name__ == "__main__":
     try:
+        # threaded=True allows concurrent requests (stream + download at same time)
         app.run(host="0.0.0.0", port=5000, threaded=True)
     finally:
         try:
