@@ -9,7 +9,9 @@ stream that you don't need to change.
 View in your browser at:
     http://<raspberry-pi-ip>:5000/
 """
-from flask import Flask, Response, render_template, jsonify, send_from_directory, request
+from flask import Flask, Response, render_template, jsonify, send_from_directory, request, redirect, url_for
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from werkzeug.security import check_password_hash, generate_password_hash
 from picamera2 import Picamera2
 from PIL import Image
 from io import BytesIO
@@ -18,6 +20,7 @@ import time
 import os
 from datetime import datetime
 import zipfile
+import requests
 try:
     import cv2
     _cv2_available = True
@@ -25,6 +28,27 @@ except Exception:
     _cv2_available = False
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'change-me-in-production')
+
+# Flask-Login setup
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+
+# External auth API configuration
+AUTH_API_URL = os.environ.get('AUTH_API_URL', 'https://api.qkeliq.eu/api/auth/login')
+
+# Simple user class for authentication
+class User(UserMixin):
+    def __init__(self, email, token=None):
+        self.id = email
+        self.email = email
+        self.token = token
+
+@login_manager.user_loader
+def load_user(user_id):
+    # user_id is the email
+    return User(user_id)
 
 # Hard-coded stream parameters
 STREAM_WIDTH = 1920
@@ -77,12 +101,61 @@ def generate_mjpeg():
         time.sleep(FRAME_SLEEP)
 
 
+@app.route("/login", methods=['GET', 'POST'])
+def login():
+    """Login page and handler. Authenticates against external API."""
+    if request.method == 'POST':
+        email = request.form.get('email', '')
+        password = request.form.get('password', '')
+        
+        if not email or not password:
+            return render_template('login.html', error='Email and password required')
+        
+        try:
+            # Call external auth API
+            resp = requests.post(
+                AUTH_API_URL,
+                json={'email': email, 'password': password},
+                timeout=5
+            )
+            
+            if resp.status_code == 200:
+                # Authentication successful
+                data = resp.json()
+                token = data.get('token') or data.get('access_token')
+                
+                if token:
+                    user = User(email, token=token)
+                    login_user(user)
+                    return redirect(url_for('index'))
+                else:
+                    return render_template('login.html', error='No token in response')
+            else:
+                return render_template('login.html', error='Invalid email or password')
+        
+        except requests.exceptions.RequestException as e:
+            app.logger.error('Auth API error: %s', e)
+            return render_template('login.html', error='Authentication service error. Try again later.')
+    
+    return render_template('login.html')
+
+
+@app.route("/logout")
+@login_required
+def logout():
+    """Logout and redirect to login page."""
+    logout_user()
+    return redirect(url_for('login'))
+
+
 @app.route("/")
+@login_required
 def index():
     return render_template("index.html")
 
 
 @app.route("/stream")
+@login_required
 def stream():
     return Response(generate_mjpeg(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
@@ -114,6 +187,7 @@ def encode_jpeg(frame):
 
 
 @app.route('/snapshot')
+@login_required
 def snapshot():
     """Return a single JPEG snapshot and log the captured frame shape.
 
@@ -173,6 +247,7 @@ def _recorder_thread(duration_seconds, out_path):
 
 
 @app.route('/record', methods=['POST'])
+@login_required
 def record():
     """Start a 10-second recording in the background. Returns JSON with status."""
     global is_recording, last_recording
@@ -193,6 +268,7 @@ def record():
 
 
 @app.route('/last_recording')
+@login_required
 def get_last_recording():
     """Return the filename of the last completed recording (if any)."""
     if last_recording:
@@ -201,6 +277,7 @@ def get_last_recording():
 
 
 @app.route('/recordings/<path:filename>')
+@login_required
 def recordings(filename):
     # Serve file with streaming and mimetype set for MP4 to avoid buffering issues
     return send_from_directory(
