@@ -2,9 +2,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including build tools for compiling numpy/pillow
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
     gcc \
+    g++ \
+    python3-dev \
+    libopenjp2-7 \
+    libtiff6 \
     && rm -rf /var/lib/apt/lists/*
 
 # For Raspberry Pi, we need additional packages (libcamera, picamera2)
