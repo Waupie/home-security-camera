@@ -1,0 +1,8 @@
+Flask>=2.0
+Flask-Login>=0.6
+Pillow>=9.0
+numpy>=1.23
+requests>=2.28
+# Optional: picamera2 (Raspberry Pi only)
+# picamera2>=0.1.0
+# OpenCV is provided by system package (python3-opencv) to avoid large pip wheels on Pi

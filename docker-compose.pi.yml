@@ -1,0 +1,20 @@
+version: '3.8'
+
+# Docker Compose for Raspberry Pi deployment
+# Run with: docker-compose -f docker-compose.yml -f docker-compose.pi.yml up
+
+services:
+  python-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+      args:
+        SKIP_PI_PACKAGES: "0"  # Build WITH Raspberry Pi packages on Pi
+    # Enable camera access and real-time scheduling
+    devices:
+      - /dev/video0:/dev/video0    # Camera device
+      - /dev/vchiq:/dev/vchiq      # GPU memory access
+    privileged: true
+    environment:
+      # Add any Pi-specific environment variables here
+      LIBCAMERA_LOG_LEVELS: '*:INFO'

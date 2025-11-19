@@ -12,7 +12,6 @@ View in your browser at:
 from flask import Flask, Response, render_template, jsonify, send_from_directory, request, redirect, url_for
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import check_password_hash, generate_password_hash
-from picamera2 import Picamera2
 from PIL import Image
 from io import BytesIO
 import threading
@@ -21,6 +20,14 @@ import os
 from datetime import datetime
 import zipfile
 import requests
+
+# Try to import Picamera2 (only available on Raspberry Pi)
+try:
+    from picamera2 import Picamera2
+    _picamera2_available = True
+except ImportError:
+    _picamera2_available = False
+
 try:
     import cv2
     _cv2_available = True
@@ -61,11 +68,15 @@ JPEG_QUALITY = 80
 # throttle the loop to avoid spinning faster than 30fps.
 FRAME_SLEEP = 1.0 / TARGET_FPS
 
-# Configure Picamera2 for 1080p RGB
-picam2 = Picamera2()
-video_config = picam2.create_video_configuration(main={"size": (STREAM_WIDTH, STREAM_HEIGHT), "format": "RGB888"})
-picam2.configure(video_config)
-picam2.start()
+# Configure Picamera2 for 1080p RGB (only on Raspberry Pi)
+picam2 = None
+if _picamera2_available:
+    picam2 = Picamera2()
+    video_config = picam2.create_video_configuration(main={"size": (STREAM_WIDTH, STREAM_HEIGHT), "format": "RGB888"})
+    picam2.configure(video_config)
+    picam2.start()
+else:
+    print("⚠️  WARNING: Picamera2 not available. Running in dev mode with synthetic frames.")
 
 frame_lock = threading.Lock()
 
@@ -85,6 +96,19 @@ def generate_mjpeg():
     encodes JPEG with Pillow, and yields the multipart frame. It sleeps
     FRAME_SLEEP between frames to aim for TARGET_FPS.
     """
+    if not _picamera2_available or picam2 is None:
+        # Generate a placeholder image if picamera2 is not available
+        import numpy as np
+        placeholder = np.zeros((STREAM_HEIGHT, STREAM_WIDTH, 3), dtype=np.uint8)
+        # Add a simple gradient
+        for i in range(STREAM_HEIGHT):
+            placeholder[i, :] = [i % 256, 100, 150]
+        jpg = encode_jpeg(placeholder)
+        while True:
+            yield (b"--frame\r\n"
+                   b"Content-Type: image/jpeg\r\n\r\n" + jpg + b"\r\n")
+            time.sleep(FRAME_SLEEP)
+    
     while True:
         with frame_lock:
             frame = picam2.capture_array("main")
@@ -194,8 +218,13 @@ def snapshot():
     Use this to inspect the actual pixels produced by the camera (helps
     determine whether Picamera2 is cropping/zooming the sensor output).
     """
-    with frame_lock:
-        frame = picam2.capture_array('main')
+    if not _picamera2_available or picam2 is None:
+        import numpy as np
+        frame = np.zeros((STREAM_HEIGHT, STREAM_WIDTH, 3), dtype=np.uint8)
+        frame[100:150, 100:150] = [0, 255, 0]  # Green square as placeholder
+    else:
+        with frame_lock:
+            frame = picam2.capture_array('main')
 
     # Log shape to help diagnose cropping/zoom (e.g. (height, width, channels))
     try:
@@ -217,6 +246,9 @@ def _recorder_thread(duration_seconds, out_path):
     # Use Picamera2's hardware H.264 encoder for efficient, real-time recording.
     # This produces an MP4 file at true 30fps without the speedup issues.
     try:
+        if not _picamera2_available or picam2 is None:
+            raise RuntimeError('Picamera2 not available; recording disabled')
+            
         from picamera2.encoders import H264Encoder
         from picamera2.outputs import FfmpegOutput
         
@@ -295,7 +327,8 @@ if __name__ == "__main__":
         app.run(host="0.0.0.0", port=5000, threaded=True)
     finally:
         try:
-            picam2.stop()
+            if picam2 is not None:
+                picam2.stop()
         except Exception:
             pass
 

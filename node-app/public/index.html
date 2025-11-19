@@ -1,0 +1,343 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pi Camera Live (Node.js)</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      
+      body {
+        background: #0a0e27;
+        color: #eee;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 1000px;
+        margin: 0 auto;
+      }
+
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+        padding-bottom: 20px;
+        border-bottom: 2px solid #1a1f3a;
+      }
+
+      h1 {
+        font-size: 28px;
+        font-weight: 600;
+      }
+
+      .status-badge {
+        display: inline-block;
+        padding: 6px 12px;
+        background: #1a1f3a;
+        border-radius: 4px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
+      .status-badge.streaming {
+        background: #10b981;
+        color: #000;
+        font-weight: 600;
+      }
+
+      .status-badge.error {
+        background: #ef4444;
+        color: #fff;
+        font-weight: 600;
+      }
+
+      .stream-section {
+        margin-bottom: 40px;
+      }
+
+      .stream-container {
+        position: relative;
+        background: #111;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+
+      #mjpeg {
+        width: 100%;
+        height: auto;
+        display: block;
+        background: #000;
+        min-height: 400px;
+      }
+
+      #mjpeg_iframe {
+        display: none;
+        width: 100%;
+        height: 600px;
+        border: 0;
+      }
+
+      .controls {
+        display: flex;
+        gap: 12px;
+        margin-top: 30px;
+        flex-wrap: wrap;
+      }
+
+      button {
+        padding: 12px 24px;
+        font-size: 14px;
+        font-weight: 600;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      #recordBtn {
+        background: #ef4444;
+        color: white;
+      }
+
+      #recordBtn:hover:not(:disabled) {
+        background: #dc2626;
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(239, 68, 68, 0.4);
+      }
+
+      #recordBtn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      button:active:not(:disabled) {
+        transform: translateY(0);
+      }
+
+      .info-panel {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin-top: 30px;
+      }
+
+      .info-card {
+        background: #1a1f3a;
+        padding: 16px;
+        border-radius: 6px;
+        border-left: 3px solid #0ea5e9;
+      }
+
+      .info-card h3 {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #999;
+        margin-bottom: 8px;
+      }
+
+      .info-card p {
+        font-size: 16px;
+        font-weight: 500;
+      }
+
+      #recordStatus {
+        color: #f59e0b;
+        font-weight: 500;
+      }
+
+      #recordingLink {
+        margin-top: 16px;
+      }
+
+      #recordingLink a {
+        display: inline-block;
+        padding: 10px 16px;
+        background: #0ea5e9;
+        color: white;
+        text-decoration: none;
+        border-radius: 6px;
+        font-size: 14px;
+        transition: all 0.2s ease;
+      }
+
+      #recordingLink a:hover {
+        background: #0284c7;
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(14, 165, 233, 0.4);
+      }
+
+      .footer {
+        margin-top: 40px;
+        padding-top: 20px;
+        border-top: 2px solid #1a1f3a;
+        font-size: 12px;
+        color: #666;
+        text-align: center;
+      }
+
+      @media (max-width: 600px) {
+        header {
+          flex-direction: column;
+          gap: 16px;
+          text-align: center;
+        }
+
+        h1 {
+          font-size: 24px;
+        }
+
+        .controls {
+          flex-direction: column;
+        }
+
+        button {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>🎥 Pi Camera Live</h1>
+        <div class="status-badge" id="statusBadge">Connecting...</div>
+      </header>
+
+      <section class="stream-section">
+        <div class="stream-container">
+          <!-- Primary MJPEG display -->
+          <img id="mjpeg" src="/stream" alt="Live stream from Pi camera">
+          <!-- Fallback for browsers that struggle with MJPEG in <img> -->
+          <iframe id="mjpeg_iframe" src="/stream" title="MJPEG fallback"></iframe>
+        </div>
+      </section>
+
+      <section class="controls">
+        <button id="recordBtn">⏹️ Record 10s</button>
+        <span id="recordStatus"></span>
+        <div id="recordingLink"></div>
+      </section>
+
+      <section class="info-panel">
+        <div class="info-card">
+          <h3>Stream Status</h3>
+          <p id="streamStatus">Waiting for stream...</p>
+        </div>
+        <div class="info-card">
+          <h3>Backend</h3>
+          <p id="backendInfo">Connecting...</p>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <p>Node.js frontend | Proxying from Python Picamera2 backend</p>
+      </footer>
+    </div>
+
+    <script>
+      // Check backend health
+      (async () => {
+        try {
+          const resp = await fetch('/health');
+          const data = await resp.json();
+          document.getElementById('backendInfo').textContent = 
+            data.backend || 'http://localhost:5000';
+        } catch (e) {
+          document.getElementById('backendInfo').textContent = 'Connection error';
+        }
+      })();
+
+      // Stream compatibility & fallback
+      (function(){
+        const img = document.getElementById('mjpeg');
+        const iframe = document.getElementById('mjpeg_iframe');
+        const status = document.getElementById('streamStatus');
+        const badge = document.getElementById('statusBadge');
+
+        function showStreaming() {
+          status.textContent = 'Streaming ✓';
+          badge.className = 'status-badge streaming';
+          badge.textContent = 'Streaming';
+          img.style.display = '';
+          iframe.style.display = 'none';
+        }
+
+        function showFallback() {
+          status.textContent = 'Fallback mode';
+          badge.className = 'status-badge error';
+          badge.textContent = 'Fallback';
+          img.style.display = 'none';
+          iframe.style.display = 'block';
+        }
+
+        function showError() {
+          status.textContent = 'Connection error';
+          badge.className = 'status-badge error';
+          badge.textContent = 'Error';
+        }
+
+        img.addEventListener('load', showStreaming);
+        img.addEventListener('error', showFallback);
+
+        setTimeout(() => {
+          if (img.complete === false) {
+            showFallback();
+          }
+        }, 5000);
+      })();
+
+      // Recording UI
+      (function(){
+        const btn = document.getElementById('recordBtn');
+        const status = document.getElementById('recordStatus');
+        const linkBox = document.getElementById('recordingLink');
+
+        async function startRecord(){
+          status.textContent = 'Starting...';
+          btn.disabled = true;
+          linkBox.innerHTML = '';
+
+          try {
+            const resp = await fetch('/record', { method: 'POST' });
+            if (!resp.ok) throw new Error('busy');
+            const data = await resp.json();
+            
+            status.textContent = `Recording ${data.duration}s...`;
+            
+            // Wait for duration + buffer, then fetch last recording
+            setTimeout(async () => {
+              status.textContent = 'Finalizing...';
+              const r = await fetch('/last_recording');
+              const j = await r.json();
+              
+              if (j.filename) {
+                const a = document.createElement('a');
+                a.href = '/recordings/' + encodeURIComponent(j.filename);
+                a.textContent = '⬇️ Download: ' + j.filename;
+                linkBox.appendChild(a);
+                status.textContent = 'Ready';
+              } else {
+                status.textContent = 'No recording found';
+              }
+              btn.disabled = false;
+            }, (data.duration + 1) * 1000);
+          } catch(e) {
+            console.error('Recording error:', e);
+            status.textContent = 'Error or busy';
+            btn.disabled = false;
+          }
+        }
+
+        btn.addEventListener('click', startRecord);
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "name": "home-security-camera-node",
+  "version": "1.0.0",
+  "description": "Node.js frontend proxy for Picamera2 MJPEG stream",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js"
+  },
+  "keywords": ["camera", "stream", "mjpeg"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2",
+    "http-proxy-middleware": "^2.0.6",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
