@@ -1,0 +1,45 @@
+services:
+  # Python Flask backend with Picamera2
+  python-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+      args:
+        SKIP_PI_PACKAGES: "1"  # Set to "0" on Raspberry Pi
+    container_name: camera-python-backend
+    ports:
+      - "5000:5000"
+    environment:
+      FLASK_ENV: production
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      AUTH_API_URL: ${AUTH_API_URL:-https://api.qkeliq.eu/api/auth/login}
+    volumes:
+      - ./recordings:/app/recordings
+    networks:
+      - camera-network
+    restart: unless-stopped
+    # For Raspberry Pi, you might need to add:
+    # devices:
+    #   - /dev/video0:/dev/video0
+    # privileged: true
+
+  # Node.js frontend proxy
+  node-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    container_name: camera-node-frontend
+    ports:
+      - "9000:3000"
+    environment:
+      PYTHON_BACKEND: http://python-backend:5000
+      PORT: 3000
+    depends_on:
+      - python-backend
+    networks:
+      - camera-network
+    restart: unless-stopped
+
+networks:
+  camera-network:
+    driver: bridge
