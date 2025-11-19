@@ -20,6 +20,10 @@ import os
 from datetime import datetime
 import zipfile
 import requests
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Try to import Picamera2 (only available on Raspberry Pi)
 try:
