@@ -30,7 +30,9 @@ RUN if [ "$SKIP_PI_PACKAGES" = "0" ]; then \
 COPY requirements.txt .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Use --only-binary to prefer pre-built wheels and avoid slow compilation on Pi
+RUN pip install --no-cache-dir --only-binary :all: -r requirements.txt || \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy app
 COPY app.py .
