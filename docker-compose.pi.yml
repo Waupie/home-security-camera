@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Docker Compose for Raspberry Pi deployment
 # Run with: docker-compose -f docker-compose.yml -f docker-compose.pi.yml up
 
