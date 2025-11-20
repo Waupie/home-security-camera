@@ -27,10 +27,10 @@ sudo apt-get install -y \
     libjpeg-dev \
     zlib1g-dev || echo "⚠️  Some optional packages not found, continuing..."
 
-# Create virtual environment (optional but recommended)
+# Create virtual environment with system packages (needed for picamera2)
 echo "🔧 Creating Python virtual environment..."
 cd "$(dirname "$0")"
-python3 -m venv venv
+python3 -m venv --system-site-packages venv
 source venv/bin/activate
 
 # Install Python dependencies
