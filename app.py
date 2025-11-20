@@ -64,19 +64,23 @@ def load_user(user_id):
 # Hard-coded stream parameters
 STREAM_WIDTH = 1920
 STREAM_HEIGHT = 1080
-TARGET_FPS = 30.0
+TARGET_FPS = 60.0  # Increased from 30 to 60 FPS
 JPEG_QUALITY = 80
 
 # Derived sleep to aim for target FPS. This delays between frames; it cannot
 # make the camera or encoding faster than their capabilities, but it will
-# throttle the loop to avoid spinning faster than 30fps.
+# throttle the loop to avoid spinning faster than target FPS.
 FRAME_SLEEP = 1.0 / TARGET_FPS
 
 # Configure Picamera2 for 1080p RGB (only on Raspberry Pi)
 picam2 = None
 if _picamera2_available:
     picam2 = Picamera2()
-    video_config = picam2.create_video_configuration(main={"size": (STREAM_WIDTH, STREAM_HEIGHT), "format": "RGB888"})
+    # Configure for higher frame rate
+    video_config = picam2.create_video_configuration(
+        main={"size": (STREAM_WIDTH, STREAM_HEIGHT), "format": "RGB888"},
+        controls={"FrameRate": TARGET_FPS}
+    )
     picam2.configure(video_config)
     picam2.start()
 else:
