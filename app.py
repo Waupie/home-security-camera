@@ -78,18 +78,6 @@ if _picamera2_available:
     picam2 = Picamera2()
     video_config = picam2.create_video_configuration(main={"size": (STREAM_WIDTH, STREAM_HEIGHT), "format": "RGB888"})
     picam2.configure(video_config)
-    
-    # Enable better low-light performance for night vision
-    # These settings allow longer exposure times and higher gain in darkness
-    picam2.set_controls({
-        "ExposureTime": 33000,  # ~33ms exposure (max for 30fps)
-        "AnalogueGain": 8.0,    # Higher gain for low light
-        "AeEnable": True,       # Auto-exposure enabled
-        "AwbEnable": True,      # Auto white balance
-        "Brightness": 0.0,      # Neutral brightness
-        "Contrast": 1.0,        # Normal contrast
-    })
-    
     picam2.start()
 else:
     print("⚠️  WARNING: Picamera2 not available. Running in dev mode with synthetic frames.")
