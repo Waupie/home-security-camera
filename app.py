@@ -64,7 +64,7 @@ def load_user(user_id):
 # Hard-coded stream parameters
 STREAM_WIDTH = 1920
 STREAM_HEIGHT = 1080
-TARGET_FPS = 60.0  # Increased from 30 to 60 FPS
+TARGET_FPS = 30.0
 JPEG_QUALITY = 80
 
 # Derived sleep to aim for target FPS. This delays between frames; it cannot
