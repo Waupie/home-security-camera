@@ -50,6 +50,19 @@ app.use(
 );
 
 /**
+ * Proxy /login and /logout to Python backend.
+ * Handles authentication with the external API.
+ */
+app.use(
+  ['/login', '/logout'],
+  createProxyMiddleware({
+    target: PYTHON_BACKEND,
+    changeOrigin: true,
+    logLevel: 'info',
+  })
+);
+
+/**
  * Proxy /record POST to Python backend.
  * Triggers a 10-second recording on the Pi.
  */
