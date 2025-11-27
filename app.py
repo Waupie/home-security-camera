@@ -393,6 +393,14 @@ def recordings(filename):
 
 
 if __name__ == "__main__":
+    # Log configuration on startup
+    print("=" * 60)
+    print("Configuration:")
+    print(f"  AUTH_API_URL: {AUTH_API_URL}")
+    print(f"  VIDEO_API_URL: {VIDEO_API_URL}")
+    print(f"  VIDEO_API_KEY: {'*' * len(VIDEO_API_KEY) if VIDEO_API_KEY else '(not set)'}")
+    print("=" * 60)
+    
     try:
         # threaded=True allows concurrent requests (stream + download at same time)
         app.run(host="0.0.0.0", port=5000, threaded=True)

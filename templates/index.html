@@ -123,7 +123,7 @@ html name=templates/index.html
           async function loadVideos(){
             videoList.innerHTML = '<p style="color:#888;">Loading videos...</p>';
             try{
-              const resp = await fetch('/videos');
+              const resp = await fetch('/api/videos');
               if (!resp.ok) throw new Error('Failed to fetch');
               const videos = await resp.json();
               
@@ -137,6 +137,8 @@ html name=templates/index.html
               videos.forEach(v => {
                 const date = new Date(v.created_at).toLocaleString();
                 const size = (v.size / (1024*1024)).toFixed(2); // MB
+                // Use the API server URL directly for streaming
+                const streamUrl = `http://localhost:3000/videos/${v.id}/stream`;
                 html += `
                   <li style="margin-bottom:16px;padding:12px;background:#222;border-radius:4px;">
                     <div><strong>${v.filename}</strong></div>
@@ -144,12 +146,12 @@ html name=templates/index.html
                       ${date} • ${size} MB
                     </div>
                     <div style="margin-top:8px;">
-                      <a href="${v.filepath.replace('uploads/', '/api/videos/' + v.id + '/stream')}" 
+                      <a href="${streamUrl}" 
                          target="_blank" 
                          style="color:#0088ff;margin-right:12px;">
                         Stream
                       </a>
-                      <a href="${v.filepath.replace('uploads/', '/api/videos/' + v.id + '/stream')}" 
+                      <a href="${streamUrl}" 
                          download="${v.filename}"
                          style="color:#0088ff;">
                         Download
