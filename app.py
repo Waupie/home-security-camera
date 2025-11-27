@@ -72,7 +72,7 @@ def recordings(filename):
     """Serve recorded video files."""
     return camera.recordings_route(filename)
 
-@app.route('/api/videos')
+@app.route('/videos')
 def videos():
     """Fetch video list from API."""
     return api.videos_route(app)

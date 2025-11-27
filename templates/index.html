@@ -145,7 +145,7 @@ html name=templates/index.html
           async function loadVideos(){
             videoList.innerHTML = '<p style="color:#888;">Loading videos...</p>';
             try{
-              const resp = await fetch('/api/videos');
+              const resp = await fetch('/videos');
               if (!resp.ok) throw new Error('Failed to fetch');
               const videos = await resp.json();
               
