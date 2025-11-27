@@ -49,6 +49,10 @@ login_manager.login_view = 'login'
 # External auth API configuration
 AUTH_API_URL = os.environ.get('AUTH_API_URL', 'https://api.qkeliq.eu/api/auth/login')
 
+# Video API configuration
+VIDEO_API_URL = os.environ.get('VIDEO_API_URL', 'http://localhost:3000/videos')
+VIDEO_API_KEY = os.environ.get('VIDEO_API_KEY', '')
+
 # Simple user class for authentication
 class User(UserMixin):
     def __init__(self, email, token=None):
@@ -255,6 +259,7 @@ def snapshot():
 def _recorder_thread(duration_seconds, out_path):
     """Background thread that records `duration_seconds` seconds from the
     Picamera2 feed using hardware H.264 encoding to produce real-time MP4.
+    Then uploads the video to the API.
     """
     global is_recording, last_recording
     start_time = time.time()
@@ -284,6 +289,32 @@ def _recorder_thread(duration_seconds, out_path):
         picam2.stop_encoder()
         elapsed = time.time() - start_time
         app.logger.info('Recording finished: file=%s elapsed=%.2fs', os.path.basename(out_path), elapsed)
+        
+        # Upload to API
+        if VIDEO_API_KEY and VIDEO_API_URL:
+            try:
+                app.logger.info('Uploading video to API: %s', VIDEO_API_URL)
+                with open(out_path, 'rb') as video_file:
+                    files = {'video': (os.path.basename(out_path), video_file, 'video/mp4')}
+                    data = {'apiKey': VIDEO_API_KEY}
+                    
+                    # Add user_id if available from current_user
+                    if hasattr(current_user, 'email'):
+                        data['user_id'] = current_user.email
+                    
+                    response = requests.post(VIDEO_API_URL, files=files, data=data, timeout=30)
+                    
+                    if response.status_code == 200 or response.status_code == 201:
+                        app.logger.info('Video uploaded successfully: %s', response.json())
+                    else:
+                        app.logger.error('Video upload failed: %d %s', response.status_code, response.text)
+            except Exception as upload_error:
+                app.logger.error('Video upload error: %s', upload_error)
+                import traceback
+                traceback.print_exc()
+        else:
+            app.logger.warning('Video API not configured, skipping upload')
+            
     except Exception as e:
         app.logger.error('Recording failed: %s', e)
         import traceback
@@ -322,6 +353,30 @@ def get_last_recording():
     if last_recording:
         return jsonify({'filename': last_recording})
     return jsonify({'filename': None})
+
+
+@app.route('/api/videos')
+@login_required
+def get_videos():
+    """Fetch list of videos from the API (newest first)."""
+    try:
+        if not VIDEO_API_URL:
+            return jsonify({'error': 'Video API not configured'}), 500
+        
+        response = requests.get(VIDEO_API_URL, timeout=10)
+        
+        if response.status_code == 200:
+            videos = response.json()
+            # Sort by created_at descending (newest first)
+            if isinstance(videos, list):
+                videos.sort(key=lambda v: v.get('created_at', ''), reverse=True)
+            return jsonify(videos)
+        else:
+            app.logger.error('Failed to fetch videos: %d %s', response.status_code, response.text)
+            return jsonify({'error': 'Failed to fetch videos'}), response.status_code
+    except Exception as e:
+        app.logger.error('Error fetching videos: %s', e)
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/recordings/<path:filename>')
