@@ -153,6 +153,10 @@ def _recorder_thread(duration_seconds, out_path, user_email=None, app_logger=Non
             try:
                 if app_logger:
                     app_logger.info('Uploading video to API: %s', VIDEO_API_URL)
+                    app_logger.info('Video file size: %d bytes', os.path.getsize(out_path))
+                    app_logger.info('Sending apiKey: %s', VIDEO_API_KEY[:5] + '...' if len(VIDEO_API_KEY) > 5 else VIDEO_API_KEY)
+                    if user_email:
+                        app_logger.info('Sending user_id: %s', user_email)
                 
                 with open(out_path, 'rb') as video_file:
                     files = {'video': (os.path.basename(out_path), video_file, 'video/mp4')}
@@ -161,7 +165,15 @@ def _recorder_thread(duration_seconds, out_path, user_email=None, app_logger=Non
                     if user_email:
                         data['user_id'] = user_email
                     
+                    if app_logger:
+                        app_logger.info('POST data fields: %s', list(data.keys()))
+                    
                     response = requests.post(VIDEO_API_URL, files=files, data=data, timeout=30)
+                    
+                    if app_logger:
+                        app_logger.info('Response status: %d', response.status_code)
+                        app_logger.info('Response headers: %s', dict(response.headers))
+                        app_logger.info('Response body: %s', response.text[:500])  # First 500 chars
                     
                     if response.status_code == 200 or response.status_code == 201:
                         if app_logger:
