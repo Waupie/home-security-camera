@@ -256,7 +256,7 @@ def snapshot():
     return Response(jpg, mimetype='image/jpeg')
 
 
-def _recorder_thread(duration_seconds, out_path):
+def _recorder_thread(duration_seconds, out_path, user_email=None):
     """Background thread that records `duration_seconds` seconds from the
     Picamera2 feed using hardware H.264 encoding to produce real-time MP4.
     Then uploads the video to the API.
@@ -298,9 +298,9 @@ def _recorder_thread(duration_seconds, out_path):
                     files = {'video': (os.path.basename(out_path), video_file, 'video/mp4')}
                     data = {'apiKey': VIDEO_API_KEY}
                     
-                    # Add user_id if available from current_user
-                    if hasattr(current_user, 'email'):
-                        data['user_id'] = current_user.email
+                    # Add user_id if available
+                    if user_email:
+                        data['user_id'] = user_email
                     
                     response = requests.post(VIDEO_API_URL, files=files, data=data, timeout=30)
                     
@@ -339,8 +339,11 @@ def record():
     filename = f'recording-{ts}.mp4'
     out_path = os.path.join(RECORDINGS_DIR, filename)
 
-    # Start background thread
-    t = threading.Thread(target=_recorder_thread, args=(RECORD_SECONDS, out_path), daemon=True)
+    # Get user email before starting thread (current_user won't be available in thread)
+    user_email = current_user.email if hasattr(current_user, 'email') else None
+
+    # Start background thread, passing user_email
+    t = threading.Thread(target=_recorder_thread, args=(RECORD_SECONDS, out_path, user_email), daemon=True)
     t.start()
 
     return jsonify({'status': 'started', 'duration': RECORD_SECONDS})
