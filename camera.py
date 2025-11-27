@@ -159,7 +159,7 @@ def _recorder_thread(duration_seconds, out_path, user_email=None, app_logger=Non
                         app_logger.info('Sending user_id: %s', user_email)
                 
                 with open(out_path, 'rb') as video_file:
-                    files = {'video': (os.path.basename(out_path), video_file, 'video/mp4')}
+                    files = {'video': (os.path.basename(out_path), video_file, 'application/mp4')}
                     data = {'apiKey': VIDEO_API_KEY}
                     
                     if user_email:
