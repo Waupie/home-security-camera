@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Flask configuration
-SECRET_KEY = os.environ.get('SECRET_KEY', 'change-me-in-production')
+SECRET_KEY = os.environ.get('VIDEO_API_KEY', 'change-me-in-production')
 
 # External auth API configuration
 AUTH_API_URL = os.environ.get('AUTH_API_URL', 'https://api.qkeliq.eu/api/auth/login')
