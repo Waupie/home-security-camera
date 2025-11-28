@@ -19,7 +19,7 @@ import api
 
 # Create Flask app
 app = Flask(__name__)
-app.secret_key = config.SECRET_KEY
+app.secret_key = config.VIDEO_API_KEY
 
 # Initialize authentication
 auth.init_auth(app)
