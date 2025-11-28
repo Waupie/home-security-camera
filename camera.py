@@ -148,47 +148,24 @@ def _recorder_thread(duration_seconds, out_path, user_email=None, app_logger=Non
         if app_logger:
             app_logger.info('Recording finished: file=%s elapsed=%.2fs', os.path.basename(out_path), elapsed)
         
-        # Upload to API
+        # Upload to API (simplified to match curl)
         if VIDEO_API_KEY and VIDEO_API_URL:
             try:
-                if app_logger:
-                    app_logger.info('Uploading video to API: %s', VIDEO_API_URL)
-                    app_logger.info('Video file size: %d bytes', os.path.getsize(out_path))
-                    app_logger.info('Sending apiKey: %s', VIDEO_API_KEY[:5] + '...' if len(VIDEO_API_KEY) > 5 else VIDEO_API_KEY)
-                    if user_email:
-                        app_logger.info('Sending user_id: %s', user_email)
-                
-                with open(out_path, 'rb') as video_file:
-                    files = {'video': (os.path.basename(out_path), video_file, 'application/mp4')}
+                # Open file and upload - exactly like curl does
+                with open(out_path, 'rb') as f:
+                    files = {'video': f}
                     data = {'apiKey': VIDEO_API_KEY}
-                    
-                    if user_email:
-                        data['user_id'] = user_email
-                    
-                    if app_logger:
-                        app_logger.info('POST data fields: %s', list(data.keys()))
-                    
                     response = requests.post(VIDEO_API_URL, files=files, data=data, timeout=30)
-                    
+                
+                if response.status_code in (200, 201):
                     if app_logger:
-                        app_logger.info('Response status: %d', response.status_code)
-                        app_logger.info('Response headers: %s', dict(response.headers))
-                        app_logger.info('Response body: %s', response.text[:500])  # First 500 chars
-                    
-                    if response.status_code == 200 or response.status_code == 201:
-                        if app_logger:
-                            app_logger.info('Video uploaded successfully: %s', response.json())
-                    else:
-                        if app_logger:
-                            app_logger.error('Video upload failed: %d %s', response.status_code, response.text)
-            except Exception as upload_error:
+                        app_logger.info('✓ Video uploaded: %s', response.json())
+                else:
+                    if app_logger:
+                        app_logger.error('✗ Upload failed [%d]: %s', response.status_code, response.text)
+            except Exception as e:
                 if app_logger:
-                    app_logger.error('Video upload error: %s', upload_error)
-                    import traceback
-                    traceback.print_exc()
-        else:
-            if app_logger:
-                app_logger.warning('Video API not configured, skipping upload')
+                    app_logger.error('✗ Upload error: %s', str(e))
             
     except Exception as e:
         if app_logger:
