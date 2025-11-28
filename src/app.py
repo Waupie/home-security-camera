@@ -8,6 +8,7 @@ Streams 1920x1080 at ~30 FPS with recording capabilities.
 View in your browser at:
     http://<raspberry-pi-ip>:5000/
 """
+import os
 from flask import Flask, render_template
 from flask_login import login_required
 
@@ -17,8 +18,13 @@ import auth
 import camera
 import api
 
-# Create Flask app
-app = Flask(__name__)
+# Get the parent directory (project root) for templates
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Create Flask app with correct template folder
+app = Flask(__name__, 
+            template_folder=os.path.join(BASE_DIR, 'templates'),
+            static_folder=os.path.join(BASE_DIR, 'static'))
 app.secret_key = config.VIDEO_API_KEY
 
 # Initialize authentication
