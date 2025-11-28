@@ -6,18 +6,21 @@ The application has been refactored into a modular structure for better organiza
 
 ```
 home-security-camera/
-├── app.py              # Main application entry point (routes only)
-├── config.py           # Configuration and environment variables
-├── auth.py             # Authentication logic (login/logout/User class)
-├── camera.py           # Camera operations (streaming, recording, encoding)
-├── api.py              # External API interactions (video list)
-├── requirements.txt    # Python dependencies
-├── .env                # Environment configuration (not in git)
-├── .env.example        # Example environment configuration
+├── src/                # Python source code
+│   ├── app.py          # Main application entry point (routes only)
+│   ├── config.py       # Configuration and environment variables
+│   ├── auth.py         # Authentication logic (login/logout/User class)
+│   ├── camera.py       # Camera operations (streaming, recording, encoding)
+│   └── api.py          # External API interactions (video list)
 ├── templates/          # HTML templates
 │   ├── index.html      # Main camera view
 │   └── login.html      # Login page
-└── recordings/         # Recorded videos (created automatically)
+├── recordings/         # Recorded videos (created automatically)
+├── requirements.txt    # Python dependencies
+├── .env                # Environment configuration (not in git)
+├── .env.example        # Example environment configuration
+├── setup-pi.sh         # Full Raspberry Pi setup script
+└── quick-setup-venv.sh # Quick venv setup script
 ```
 
 ## Module Overview
@@ -79,7 +82,7 @@ home-security-camera/
 ### Standard Run
 ```bash
 source venv/bin/activate
-python3 app.py
+python3 src/app.py
 ```
 
 ### First-Time Setup (Raspberry Pi)
