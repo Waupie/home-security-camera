@@ -8,6 +8,24 @@ html name=templates/index.html
       body { background:#111; color:#eee; font-family: sans-serif; text-align:center; }
       img { max-width: 100%; height: auto; border: 4px solid #222; margin-top: 20px; }
       .container { width: 90%; max-width: 900px; margin: 0 auto; }
+      
+      /* Responsive video container with 16:9 aspect ratio */
+      .video-container {
+        position: relative;
+        width: 100%;
+        padding-bottom: 56.25%; /* 16:9 aspect ratio (9/16 = 0.5625) */
+        margin-top: 20px;
+        border: 4px solid #222;
+      }
+      .video-container iframe,
+      .video-container img {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        border: 0;
+      }
     </style>
   </head>
   <body>
@@ -17,11 +35,15 @@ html name=templates/index.html
       </div>
       <h1>Pi Camera Live Stream</h1>
       <p>Stream URL: <code>/stream</code></p>
-      <!-- Primary MJPEG display: browsers that support MJPEG in <img> will show the live stream here -->
-      <img id="mjpeg" src="/stream" alt="Live stream">
+      
+      <!-- Responsive video container -->
+      <div class="video-container">
+        <!-- Primary MJPEG display: browsers that support MJPEG in <img> will show the live stream here -->
+        <img id="mjpeg" src="/stream" alt="Live stream">
 
-      <!-- Fallback: some clients handle MJPEG better when loaded in an <iframe> or <object>. -->
-      <iframe id="mjpeg_iframe" src="/stream" style="display:none;border:0;width:100%;height:540px;" title="MJPEG fallback"></iframe>
+        <!-- Fallback: some clients handle MJPEG better when loaded in an <iframe> or <object>. -->
+        <iframe id="mjpeg_iframe" src="/stream" style="display:none;" title="MJPEG fallback"></iframe>
+      </div>
 
       <p id="status" style="margin-top:12px;color:#bbb">Status: waiting for stream...</p>
 
@@ -31,6 +53,15 @@ html name=templates/index.html
       </div>
 
       <div id="recordingLink" style="margin-top:12px;"></div>
+
+      <!-- Video List Section -->
+      <div style="margin-top:40px;border-top:2px solid #333;padding-top:20px;">
+        <h2>Recorded Videos</h2>
+        <button id="refreshBtn" style="margin-bottom:12px;">Refresh List</button>
+        <div id="videoList" style="text-align:left;max-height:400px;overflow-y:auto;">
+          <p style="color:#888;">Loading videos...</p>
+        </div>
+      </div>
 
       <script>
         // Small compatibility helper: keep the <img> primary, but show iframe fallback on error.
@@ -104,6 +135,68 @@ html name=templates/index.html
           }
 
           btn.addEventListener('click', startRecord);
+        })();
+
+        // Video list UI
+        (function(){
+          const refreshBtn = document.getElementById('refreshBtn');
+          const videoList = document.getElementById('videoList');
+
+          async function loadVideos(){
+            videoList.innerHTML = '<p style="color:#888;">Loading videos...</p>';
+            try{
+              const resp = await fetch('/videos');
+              if (!resp.ok) throw new Error('Failed to fetch');
+              const videos = await resp.json();
+              
+              if (videos.length === 0){
+                videoList.innerHTML = '<p style="color:#888;">No videos yet</p>';
+                return;
+              }
+
+              // Build video list (newest first, already sorted by backend)
+              let html = '<ul style="list-style:none;padding:0;">';
+              videos.forEach(v => {
+                const date = new Date(v.created_at).toLocaleString();
+                const size = (v.size / (1024*1024)).toFixed(2); // MB
+                // Use the API server URL directly for streaming
+                const streamUrl = `http://localhost:3000/videos/${v.id}/stream`;
+                html += `
+                  <li style="margin-bottom:16px;padding:12px;background:#222;border-radius:4px;">
+                    <div><strong>${v.filename}</strong></div>
+                    <div style="font-size:0.9em;color:#aaa;">
+                      ${date} • ${size} MB
+                    </div>
+                    <div style="margin-top:8px;">
+                      <a href="${streamUrl}" 
+                         target="_blank" 
+                         style="color:#0088ff;margin-right:12px;">
+                        Stream
+                      </a>
+                      <a href="${streamUrl}" 
+                         download="${v.filename}"
+                         style="color:#0088ff;">
+                        Download
+                      </a>
+                    </div>
+                  </li>
+                `;
+              });
+              html += '</ul>';
+              videoList.innerHTML = html;
+            }catch(e){
+              videoList.innerHTML = '<p style="color:#f55;">Failed to load videos</p>';
+              console.error(e);
+            }
+          }
+
+          refreshBtn.addEventListener('click', loadVideos);
+          
+          // Load videos on page load
+          loadVideos();
+          
+          // Auto-refresh every 15 seconds
+          setInterval(loadVideos, 15000);
         })();
       </script>
     </div>
