@@ -1,3 +1,7 @@
+# Home Security Camera
+
+Home Security Camera is a lightweight, Raspberry Pi-friendly Flask application that provides live MJPEG streaming, hardware-accelerated H.264 recording, snapshot capture, and optional uploads to an external video API. It is designed for easy setup on a Raspberry Pi and straightforward integration with external authentication and video services.
+
 # Project Architecture
 
 The application has been refactored into a modular structure for better organization and maintainability.
@@ -27,7 +31,6 @@ home-security-camera/
 
 ### `app.py` (Main Entry Point)
 - **Purpose**: Application initialization and route definitions
-- **Size**: ~90 lines (down from 407 lines!)
 - **Responsibilities**:
   - Create Flask app
   - Initialize authentication and camera
@@ -108,22 +111,3 @@ AUTH_API_URL=https://api.qkeliq.eu/api/auth/login
 VIDEO_API_URL=https://api.qkeliq.eu/api/videos
 VIDEO_API_KEY=your-api-key-here
 ```
-
-## Benefits of Modular Structure
-
-1. **Maintainability**: Each module has a single, clear responsibility
-2. **Readability**: ~70-200 lines per file vs. 400+ line monolith
-3. **Testability**: Easier to unit test individual modules
-4. **Reusability**: Modules can be used independently
-5. **Collaboration**: Multiple developers can work on different modules
-6. **Debugging**: Easier to locate and fix issues
-
-## Backwards Compatibility
-
-The refactored code maintains 100% API compatibility:
-- All routes remain the same
-- All functionality is preserved
-- `.env` configuration is unchanged
-- Templates are unmodified
-
-If you need the original monolithic version, it's saved as `app.py.backup`.
