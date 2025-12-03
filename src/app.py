@@ -89,6 +89,30 @@ def videos_grouped():
     """Fetch video list grouped by date from API."""
     return api.videos_grouped_route(app)
 
+
+# ---------------------------------------------------------------------------
+# Error handlers + test route
+# ---------------------------------------------------------------------------
+@app.errorhandler(404)
+def handle_404(err):
+    # err may be an HTTPException
+    message = getattr(err, 'name', 'Not Found')
+    detail = str(err)
+    return render_template('error.html', code=404, message=message, detail=detail), 404
+
+
+@app.errorhandler(500)
+def handle_500(err):
+    message = 'Server Error'
+    detail = str(err)
+    return render_template('error.html', code=500, message=message, detail=detail), 500
+
+
+@app.route('/error-test')
+def error_test():
+    """Simple route to preview the error page during development."""
+    raise RuntimeError('This is a test error for previewing the error page')
+
 # ============================================================================
 # MAIN
 # ============================================================================

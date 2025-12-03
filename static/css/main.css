@@ -20,6 +20,9 @@ img { max-width: 100%; height: auto; border: 4px solid #222; margin-top: 20px; }
   border: 0;
   margin: 0; /* reset any global img margins so the absolute element isn't pushed down */
   display: block;
+  object-fit: contain; /* ensure the image/video fits the container without cropping */
+  object-position: center center;
+  background: #000; /* letterbox areas show as black */
 }
 
 /* Controls */
