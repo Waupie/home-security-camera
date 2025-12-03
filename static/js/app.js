@@ -27,6 +27,51 @@
       showFallback();
     }
   }, 4000);
+  
+  // Safari sometimes renders the MJPEG <img> zoomed on reload. To avoid
+  // that, explicitly size the img to 'contain' using its intrinsic aspect
+  // ratio and the container dimensions. We update on load and resize.
+  function adjustStreamFit() {
+    try {
+      if (!img || !img.naturalWidth) return;
+      const container = img.parentElement;
+      if (!container) return;
+      const cW = container.clientWidth;
+      const cH = container.clientHeight;
+      const iW = img.naturalWidth;
+      const iH = img.naturalHeight;
+      if (!cW || !cH || !iW || !iH) return;
+      const cRatio = cW / cH;
+      const iRatio = iW / iH;
+      if (iRatio > cRatio) {
+        // image is wider than container -> fit width
+        img.style.width = '100%';
+        img.style.height = 'auto';
+      } else {
+        // image is taller -> fit height
+        img.style.width = 'auto';
+        img.style.height = '100%';
+      }
+      // Center the image inside absolute container
+      img.style.top = '50%';
+      img.style.left = '50%';
+      img.style.transform = 'translate(-50%, -50%)';
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  if (img) {
+    img.addEventListener('load', adjustStreamFit);
+    window.addEventListener('resize', adjustStreamFit);
+    // try a few times in case the multipart stream takes time to populate dimensions
+    let attempts = 0;
+    const iv = setInterval(()=>{
+      attempts += 1;
+      adjustStreamFit();
+      if (img.naturalWidth || attempts > 10) clearInterval(iv);
+    }, 300);
+  }
 })();
 
 // Recording UI
@@ -104,8 +149,8 @@
                   <div><strong>${v.filename}</strong></div>
                   <div style="font-size:0.9em;color:#aaa;">${date} • ${size} MB</div>
                   <div style="margin-top:8px;">
-                    <a href="${streamUrl}" class="stream-link" data-filename="${encodeURIComponent(v.filename)}" style="color:#0088ff;margin-right:12px;">Stream</a>
-                    <a href="${streamUrl}" download="${v.filename}" style="color:#0088ff;">Download</a>
+                    <a href="${streamUrl}" class="btn stream-link" data-filename="${encodeURIComponent(v.filename)}">Stream</a>
+                    <a href="${streamUrl}" class="btn download-link" download="${v.filename}">Download</a>
                   </div>
                 </li>
           `;

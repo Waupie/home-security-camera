@@ -57,6 +57,47 @@ img { max-width: 100%; height: auto; border: 4px solid #222; margin-top: 20px; }
 .video-entry { margin-bottom:10px; padding:10px; background:#222; border-radius:4px; }
 .video-entry a { color:#0088ff; }
 
+/* Generic styled button for links */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+}
+
+.btn:active { transform: translateY(1px); }
+
+/* Stream button (primary) */
+.stream-link {
+  background: linear-gradient(180deg,#0b74ff,#0066d6);
+  color: #ffffff !important; /* ensure high contrast text */
+  font-weight: 700;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.9), 0 6px 20px rgba(0,0,0,0.45);
+  -webkit-text-stroke: 0.6px rgba(0,0,0,0.6); /* subtle outline to improve legibility */
+  box-shadow: 0 10px 28px rgba(3,102,214,0.28);
+  border: 1px solid rgba(0,0,0,0.30);
+}
+.stream-link::before { content: "▶"; font-size:0.9rem; }
+.stream-link:hover { filter: brightness(1.12); box-shadow: 0 12px 32px rgba(3,102,214,0.32); }
+
+.stream-link:visited,
+.stream-link:active,
+.stream-link:focus { color: #ffffff !important; }
+
+/* Download button (secondary) */
+.download-link {
+  background: transparent;
+  color: #08a0ff;
+  border: 1px solid rgba(8,160,255,0.12);
+}
+.download-link::before { content: "⬇"; font-size:0.9rem; }
+.download-link:hover { background: rgba(8,160,255,0.04); }
+
 /* Modal styles for inline video player */
 #videoModal {
   position: fixed;
