@@ -95,16 +95,16 @@
               <ul style="list-style:none;padding:0;margin:8px 0 0 0;">
         `;
 
-        group.videos.forEach(v => {
+          group.videos.forEach(v => {
           const date = v.created_at ? new Date(v.created_at).toLocaleString() : '';
           const size = v.size ? (v.size / (1024*1024)).toFixed(2) : '0.00';
-          const streamUrl = (v.url && v.url.startsWith('http')) ? v.url : (`/recordings/${encodeURIComponent(v.filename)}`);
-            html += `
+            const streamUrl = (v.url && v.url.startsWith('http')) ? v.url : (`/recordings/${encodeURIComponent(v.filename)}`);
+          html += `
                 <li class="video-entry">
                   <div><strong>${v.filename}</strong></div>
                   <div style="font-size:0.9em;color:#aaa;">${date} • ${size} MB</div>
                   <div style="margin-top:8px;">
-                    <a href="${streamUrl}" target="_blank" style="color:#0088ff;margin-right:12px;">Stream</a>
+                    <a href="${streamUrl}" class="stream-link" data-filename="${encodeURIComponent(v.filename)}" style="color:#0088ff;margin-right:12px;">Stream</a>
                     <a href="${streamUrl}" download="${v.filename}" style="color:#0088ff;">Download</a>
                   </div>
                 </li>
@@ -125,6 +125,47 @@
           btn.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
         });
       });
+
+      // Hook stream links to open modal player
+      function openModalPlayer(src, filename) {
+        const modal = document.getElementById('videoModal');
+        const content = document.getElementById('videoModalContent');
+        if (!modal || !content) return;
+        // Clear previous content
+        content.innerHTML = '';
+        const video = document.createElement('video');
+        video.controls = true;
+        video.autoplay = true;
+        video.src = src;
+        video.setAttribute('playsinline', '');
+        content.appendChild(video);
+        const close = document.createElement('button');
+        close.id = 'videoModalClose';
+        close.textContent = 'Close';
+        close.addEventListener('click', ()=>{ video.pause(); modal.style.display = 'none'; content.innerHTML = ''; });
+        content.appendChild(close);
+        modal.style.display = 'flex';
+      }
+
+      document.querySelectorAll('#videoList a.stream-link').forEach(a => {
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          const src = a.href;
+          openModalPlayer(src, a.dataset.filename || 'video');
+        });
+      });
+
+      // Close modal when clicking outside content
+      const modalEl = document.getElementById('videoModal');
+      if (modalEl) {
+        modalEl.addEventListener('click', (e)=>{
+          if (e.target === modalEl) {
+            const content = document.getElementById('videoModalContent');
+            if (content) { content.innerHTML = ''; }
+            modalEl.style.display = 'none';
+          }
+        });
+      }
 
     }catch(e){
       videoList.innerHTML = '<p style="color:#f55;">Failed to load videos</p>';
