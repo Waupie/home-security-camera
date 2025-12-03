@@ -241,7 +241,7 @@ def recordings_route(filename):
     return send_from_directory(
         RECORDINGS_DIR, 
         filename, 
-        as_attachment=True,
+        as_attachment=False,
         mimetype='video/mp4',
         download_name=filename
     )

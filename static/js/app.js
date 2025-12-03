@@ -99,12 +99,12 @@
           const date = v.created_at ? new Date(v.created_at).toLocaleString() : '';
           const size = v.size ? (v.size / (1024*1024)).toFixed(2) : '0.00';
           const streamUrl = (v.url && v.url.startsWith('http')) ? v.url : (`/recordings/${encodeURIComponent(v.filename)}`);
-          html += `
+            html += `
                 <li class="video-entry">
                   <div><strong>${v.filename}</strong></div>
                   <div style="font-size:0.9em;color:#aaa;">${date} • ${size} MB</div>
                   <div style="margin-top:8px;">
-                    <a href="${streamUrl}" target="_blank" style="color:#0088ff;margin-right:12px;">Open</a>
+                    <a href="${streamUrl}" target="_blank" style="color:#0088ff;margin-right:12px;">Stream</a>
                     <a href="${streamUrl}" download="${v.filename}" style="color:#0088ff;">Download</a>
                   </div>
                 </li>
