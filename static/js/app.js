@@ -27,6 +27,51 @@
       showFallback();
     }
   }, 4000);
+  
+  // Safari sometimes renders the MJPEG <img> zoomed on reload. To avoid
+  // that, explicitly size the img to 'contain' using its intrinsic aspect
+  // ratio and the container dimensions. We update on load and resize.
+  function adjustStreamFit() {
+    try {
+      if (!img || !img.naturalWidth) return;
+      const container = img.parentElement;
+      if (!container) return;
+      const cW = container.clientWidth;
+      const cH = container.clientHeight;
+      const iW = img.naturalWidth;
+      const iH = img.naturalHeight;
+      if (!cW || !cH || !iW || !iH) return;
+      const cRatio = cW / cH;
+      const iRatio = iW / iH;
+      if (iRatio > cRatio) {
+        // image is wider than container -> fit width
+        img.style.width = '100%';
+        img.style.height = 'auto';
+      } else {
+        // image is taller -> fit height
+        img.style.width = 'auto';
+        img.style.height = '100%';
+      }
+      // Center the image inside absolute container
+      img.style.top = '50%';
+      img.style.left = '50%';
+      img.style.transform = 'translate(-50%, -50%)';
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  if (img) {
+    img.addEventListener('load', adjustStreamFit);
+    window.addEventListener('resize', adjustStreamFit);
+    // try a few times in case the multipart stream takes time to populate dimensions
+    let attempts = 0;
+    const iv = setInterval(()=>{
+      attempts += 1;
+      adjustStreamFit();
+      if (img.naturalWidth || attempts > 10) clearInterval(iv);
+    }, 300);
+  }
 })();
 
 // Recording UI
@@ -95,17 +140,17 @@
               <ul style="list-style:none;padding:0;margin:8px 0 0 0;">
         `;
 
-        group.videos.forEach(v => {
+          group.videos.forEach(v => {
           const date = v.created_at ? new Date(v.created_at).toLocaleString() : '';
           const size = v.size ? (v.size / (1024*1024)).toFixed(2) : '0.00';
-          const streamUrl = (v.url && v.url.startsWith('http')) ? v.url : (`/recordings/${encodeURIComponent(v.filename)}`);
+            const streamUrl = (v.url && v.url.startsWith('http')) ? v.url : (`/recordings/${encodeURIComponent(v.filename)}`);
           html += `
                 <li class="video-entry">
                   <div><strong>${v.filename}</strong></div>
                   <div style="font-size:0.9em;color:#aaa;">${date} • ${size} MB</div>
                   <div style="margin-top:8px;">
-                    <a href="${streamUrl}" target="_blank" style="color:#0088ff;margin-right:12px;">Open</a>
-                    <a href="${streamUrl}" download="${v.filename}" style="color:#0088ff;">Download</a>
+                    <a href="${streamUrl}" class="btn stream-link" data-filename="${encodeURIComponent(v.filename)}">Stream</a>
+                    <a href="${streamUrl}" class="btn download-link" download="${v.filename}">Download</a>
                   </div>
                 </li>
           `;
@@ -125,6 +170,47 @@
           btn.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
         });
       });
+
+      // Hook stream links to open modal player
+      function openModalPlayer(src, filename) {
+        const modal = document.getElementById('videoModal');
+        const content = document.getElementById('videoModalContent');
+        if (!modal || !content) return;
+        // Clear previous content
+        content.innerHTML = '';
+        const video = document.createElement('video');
+        video.controls = true;
+        video.autoplay = true;
+        video.src = src;
+        video.setAttribute('playsinline', '');
+        content.appendChild(video);
+        const close = document.createElement('button');
+        close.id = 'videoModalClose';
+        close.textContent = 'Close';
+        close.addEventListener('click', ()=>{ video.pause(); modal.style.display = 'none'; content.innerHTML = ''; });
+        content.appendChild(close);
+        modal.style.display = 'flex';
+      }
+
+      document.querySelectorAll('#videoList a.stream-link').forEach(a => {
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          const src = a.href;
+          openModalPlayer(src, a.dataset.filename || 'video');
+        });
+      });
+
+      // Close modal when clicking outside content
+      const modalEl = document.getElementById('videoModal');
+      if (modalEl) {
+        modalEl.addEventListener('click', (e)=>{
+          if (e.target === modalEl) {
+            const content = document.getElementById('videoModalContent');
+            if (content) { content.innerHTML = ''; }
+            modalEl.style.display = 'none';
+          }
+        });
+      }
 
     }catch(e){
       videoList.innerHTML = '<p style="color:#f55;">Failed to load videos</p>';

@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Error</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <style>
+      .error-container { padding: 48px 24px; text-align: center; }
+      .error-code { font-size: 4rem; font-weight: 700; margin-bottom: 8px; }
+      .error-message { font-size: 1.25rem; color:#ddd; margin-bottom: 12px; }
+      .error-detail { margin-top: 18px; color:#aaa; font-family: monospace; white-space: pre-wrap; text-align: left; display:inline-block; max-width:760px; }
+      .back-link { display:inline-block; margin-top:18px; padding:10px 14px; background:#1b1b1b; color:#fff; border-radius:6px; text-decoration:none; }
+    </style>
+  </head>
+  <body>
+    <div class="container error-container">
+      <div class="error-code">{{ code }}</div>
+      <div class="error-message">{{ message }}</div>
+      {% if detail %}
+      <div class="error-detail">{{ detail }}</div>
+      {% endif %}
+
+      <div>
+        <a class="back-link" href="/">Return to Home</a>
+      </div>
+    </div>
+  </body>
+</html>
