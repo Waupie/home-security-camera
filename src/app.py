@@ -83,6 +83,12 @@ def videos():
     """Fetch video list from API."""
     return api.videos_route(app)
 
+
+@app.route('/videos/grouped')
+def videos_grouped():
+    """Fetch video list grouped by date from API."""
+    return api.videos_grouped_route(app)
+
 # ============================================================================
 # MAIN
 # ============================================================================
