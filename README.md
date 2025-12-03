@@ -1,6 +1,6 @@
 # Home Security Camera
 
-Home Security Camera is a lightweight, Raspberry Pi-friendly Flask application that provides live MJPEG streaming, hardware-accelerated H.264 recording, snapshot capture, and optional uploads to an external video API. It is designed for easy setup on a Raspberry Pi and straightforward integration with external authentication and video services.
+Home Security Camera is a lightweight, Raspberry Pi Flask application that provides live MJPEG streaming, recording, snapshot capture, and optional uploads to an external video API. 
 
 # Project Architecture
 
