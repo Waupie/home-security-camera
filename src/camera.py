@@ -42,6 +42,11 @@ MOVEMENT_HOLD_SECONDS = 10.0
 last_movement_dt = None
 last_movement = None
 _motion_prev = None
+_motion_count = 0
+# Number of consecutive frames above threshold required to register movement
+MOTION_CONSECUTIVE = 3
+# Mean-difference threshold on downsampled image to consider a frame 'different'
+MOTION_THRESHOLD = 6.0
 
 # Recording state
 recording_lock = threading.Lock()
@@ -148,11 +153,25 @@ def generate_mjpeg():
                 detected = mean_diff > 6.0
                 _motion_prev = small
 
+            # debounce: require several consecutive frames above threshold
+            global _motion_count
             if detected:
+                _motion_count = min(_motion_count + 1, MOTION_CONSECUTIVE)
+            else:
+                _motion_count = max(_motion_count - 1, 0)
+
+            # Trigger movement only when consecutive count reached and not currently in hold window
+            now = datetime.utcnow()
+            in_window = False
+            if last_movement_dt is not None:
+                try:
+                    in_window = (now - last_movement_dt).total_seconds() <= MOVEMENT_HOLD_SECONDS
+                except Exception:
+                    in_window = False
+
+            if _motion_count >= MOTION_CONSECUTIVE and not in_window:
                 with movement_lock:
-                    # update timestamp of last movement; movement will be reported
-                    # as true for MOVEMENT_HOLD_SECONDS after this timestamp
-                    last_movement_dt = datetime.utcnow()
+                    last_movement_dt = now
                     last_movement = last_movement_dt.isoformat() + 'Z'
         except Exception:
             # Don't let motion detection break the stream
