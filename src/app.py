@@ -9,7 +9,9 @@ View in your browser at:
     http://<raspberry-pi-ip>:5000/
 """
 import os
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, Response, stream_with_context
+import json
+import time
 from flask_login import login_required
 
 # Import configuration and modules
@@ -109,6 +111,35 @@ def movement_test():
         val = set_val.lower() in ('1', 'true', 'yes', 'on')
         res = camera._toggle_movement_test(val)
     return jsonify(res)
+
+
+    def _movement_sse_generator(poll_interval=0.5):
+        """Generator for server-sent events that emits movement state when it changes.
+
+        This polls the in-process movement state and yields an SSE message only
+        when the value changes to avoid constant client polling.
+        """
+        last_state = None
+        while True:
+            try:
+                state = camera.get_movement_state()
+                # Only send when state changes
+                if state != last_state:
+                    last_state = state
+                    data = json.dumps(state)
+                    yield f"data: {data}\n\n"
+            except GeneratorExit:
+                break
+            except Exception:
+                # Ignore transient errors and continue
+                pass
+            time.sleep(poll_interval)
+
+
+    @app.route('/movement/stream')
+    def movement_stream():
+        """Server-sent events endpoint streaming movement state changes."""
+        return Response(stream_with_context(_movement_sse_generator()), mimetype='text/event-stream')
 
 
 # ---------------------------------------------------------------------------

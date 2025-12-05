@@ -79,28 +79,55 @@
   const el = document.getElementById('movementStatus');
   if (!el) return;
 
-  let last = null;
-  async function poll(){
-    try{
-      const r = await fetch('/movement');
-      if (!r.ok) throw new Error('network');
-      const j = await r.json();
-      const mov = !!j.movement;
-      if (mov){
-        el.style.display = 'block';
-      } else {
+  // Prefer EventSource (SSE) to receive movement updates only when state changes.
+  if (window.EventSource) {
+    try {
+      const es = new EventSource('/movement/stream');
+      es.addEventListener('message', (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          if (data.movement) {
+            el.style.display = 'block';
+          } else {
+            el.style.display = 'none';
+          }
+        } catch (e) {
+          el.style.display = 'none';
+        }
+      });
+      es.addEventListener('error', () => {
+        // On error, hide indicator to avoid stale UI and close EventSource
         el.style.display = 'none';
-      }
-      last = j.last_movement || last;
-    }catch(e){
-      // fail silently; hide indicator to avoid false positives
-      el.style.display = 'none';
+        try { es.close(); } catch (e) {}
+      });
+      // Graceful close on page unload
+      window.addEventListener('beforeunload', ()=> { try { es.close(); } catch(e){} });
+    } catch (e) {
+      // Fall back to polling below
+      startPollingFallback(el);
     }
+  } else {
+    // Browser doesn't support EventSource -> polling fallback
+    startPollingFallback(el);
   }
 
-  // Start polling immediately, then every second
-  poll();
-  setInterval(poll, 1000);
+  function startPollingFallback(el){
+    let visibleOnly = true;
+    async function poll(){
+      try{
+        if (visibleOnly && document && document.hidden) return;
+        const r = await fetch('/movement');
+        if (!r.ok) throw new Error('network');
+        const j = await r.json();
+        const mov = !!j.movement;
+        el.style.display = mov ? 'block' : 'none';
+      }catch(e){
+        el.style.display = 'none';
+      }
+    }
+    poll();
+    setInterval(poll, 3000); // slower polling as a fallback
+  }
 })();
 
 // Recording UI
