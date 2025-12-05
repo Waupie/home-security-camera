@@ -33,6 +33,12 @@ except Exception:
 picam2 = None
 frame_lock = threading.Lock()
 
+# Movement detection state
+movement_lock = threading.Lock()
+movement_detected = False
+last_movement = None
+_motion_prev = None
+
 # Recording state
 recording_lock = threading.Lock()
 is_recording = False
@@ -112,6 +118,39 @@ def generate_mjpeg():
     while True:
         with frame_lock:
             frame = picam2.capture_array("main")
+
+        # --- Motion detection (cheap, low-res) ---
+        try:
+            import numpy as np
+            global _motion_prev, movement_detected, last_movement
+
+            # Convert to grayscale (try cv2 for speed/accuracy)
+            if _cv2_available:
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                small = cv2.resize(gray, (0,0), fx=0.25, fy=0.25)
+            else:
+                # Simple luma approximation and fast downsample by slicing
+                gray = (frame[...,0].astype('int') * 0.2989 + frame[...,1].astype('int') * 0.5870 + frame[...,2].astype('int') * 0.1140).astype('uint8')
+                small = gray[::4, ::4]
+
+            if _motion_prev is None:
+                _motion_prev = small
+                detected = False
+            else:
+                # Compute difference and simple threshold
+                diff = (small.astype('int') - _motion_prev.astype('int'))
+                mean_diff = float(np.abs(diff).mean())
+                # Movement threshold - tuned for downsampled image
+                detected = mean_diff > 6.0
+                _motion_prev = small
+
+            with movement_lock:
+                movement_detected = bool(detected)
+                if movement_detected:
+                    last_movement = datetime.utcnow().isoformat() + 'Z'
+        except Exception:
+            # Don't let motion detection break the stream
+            pass
 
         jpg = encode_jpeg(frame)
 
@@ -245,3 +284,33 @@ def recordings_route(filename):
         mimetype='video/mp4',
         download_name=filename
     )
+
+
+def get_movement_state():
+    """Return current movement detection state as a dict.
+
+    Example: { 'movement': True, 'last_movement': '2025-12-05T12:34:56Z' }
+    """
+    with movement_lock:
+        return {
+            'movement': bool(movement_detected),
+            'last_movement': last_movement
+        }
+
+
+def _toggle_movement_test(value=None):
+    """Developer helper to flip or set the movement flag (not route-protected).
+
+    Passing `value` as True/False sets the flag; None toggles it.
+    """
+    global movement_detected, last_movement
+    with movement_lock:
+        if value is None:
+            movement_detected = not movement_detected
+        else:
+            movement_detected = bool(value)
+        if movement_detected:
+            last_movement = datetime.utcnow().isoformat() + 'Z'
+        else:
+            last_movement = None
+    return {'movement': movement_detected, 'last_movement': last_movement}

@@ -9,7 +9,7 @@ View in your browser at:
     http://<raspberry-pi-ip>:5000/
 """
 import os
-from flask import Flask, render_template
+from flask import Flask, render_template, jsonify, request
 from flask_login import login_required
 
 # Import configuration and modules
@@ -88,6 +88,27 @@ def videos():
 def videos_grouped():
     """Fetch video list grouped by date from API."""
     return api.videos_grouped_route(app)
+
+
+@app.route('/movement')
+def movement():
+    """Return current movement detection state from the camera module."""
+    return jsonify(camera.get_movement_state())
+
+
+@app.route('/movement-test')
+def movement_test():
+    """Dev-only: toggle or set movement state for testing.
+
+    Query params: `set=true|false` to set explicitly.
+    """
+    set_val = request.args.get('set')
+    if set_val is None:
+        res = camera._toggle_movement_test()
+    else:
+        val = set_val.lower() in ('1', 'true', 'yes', 'on')
+        res = camera._toggle_movement_test(val)
+    return jsonify(res)
 
 
 # ---------------------------------------------------------------------------

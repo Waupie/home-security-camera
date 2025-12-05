@@ -29,6 +29,18 @@ img { max-width: 100%; height: auto; border: 4px solid #222; margin-top: 20px; }
 #status { margin-top:12px; color:#bbb }
 #recordBtn { padding:8px 14px; }
 
+/* Movement indicator */
+.movement-indicator {
+  display: block;
+  background: rgba(255,64,64,0.12);
+  color: #ff6b6b;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-weight: 700;
+  margin-top: 8px;
+  border: 1px solid rgba(255,64,64,0.15);
+}
+
 /* Video list */
 #videoList { text-align:left; max-height:400px; overflow-y:auto; }
 

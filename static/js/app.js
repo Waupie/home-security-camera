@@ -74,6 +74,35 @@
   }
 })();
 
+// Movement polling: poll /movement every 1s and show a message when movement is detected
+(function(){
+  const el = document.getElementById('movementStatus');
+  if (!el) return;
+
+  let last = null;
+  async function poll(){
+    try{
+      const r = await fetch('/movement');
+      if (!r.ok) throw new Error('network');
+      const j = await r.json();
+      const mov = !!j.movement;
+      if (mov){
+        el.style.display = 'block';
+      } else {
+        el.style.display = 'none';
+      }
+      last = j.last_movement || last;
+    }catch(e){
+      // fail silently; hide indicator to avoid false positives
+      el.style.display = 'none';
+    }
+  }
+
+  // Start polling immediately, then every second
+  poll();
+  setInterval(poll, 1000);
+})();
+
 // Recording UI
 (function(){
   const btn = document.getElementById('recordBtn');
