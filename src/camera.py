@@ -42,9 +42,9 @@ movement_lock = threading.Lock()
 # When motion is detected, keep the movement state true for this many seconds
 MOVEMENT_HOLD_SECONDS = 10.0
 # Detection tuning
-MOTION_CONSECUTIVE = 4            # consecutive frames required
-PIXEL_DIFF_THRESH = 30           # per-pixel diff threshold
-MOTION_AREA_RATIO = 0.01        # fraction of downsampled pixels that must change
+MOTION_CONSECUTIVE = 8            # consecutive frames required (increased for stability)
+PIXEL_DIFF_THRESH = 40           # per-pixel diff threshold (higher = less sensitive)
+MOTION_AREA_RATIO = 0.05        # fraction of downsampled pixels that must change (5%)
 
 # Internal state
 _motion_prev = None
@@ -154,8 +154,10 @@ def generate_mjpeg():
         try:
             if _cv2_available:
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                small = cv2.resize(gray, (0, 0), fx=0.25, fy=0.25, interpolation=cv2.INTER_AREA)
-                small_blur = cv2.GaussianBlur(small, (5, 5), 0)
+                # Reduce downsampling so we include more pixels in the analysis
+                small = cv2.resize(gray, (0, 0), fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
+                # Slightly stronger blur to remove sensor speckle
+                small_blur = cv2.GaussianBlur(small, (7, 7), 0)
 
                 if _motion_prev is None:
                     _motion_prev = small_blur.copy()
@@ -171,7 +173,8 @@ def generate_mjpeg():
             else:
                 import numpy as np
                 gray = (frame[..., 0].astype('int') * 0.2989 + frame[..., 1].astype('int') * 0.5870 + frame[..., 2].astype('int') * 0.1140).astype('uint8')
-                small = gray[::4, ::4]
+                # Downsample less aggressively (use every 2nd pixel instead of every 4th)
+                small = gray[::2, ::2]
                 if _motion_prev is None:
                     _motion_prev = small.copy()
                     detected = False
