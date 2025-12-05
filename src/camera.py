@@ -35,7 +35,11 @@ frame_lock = threading.Lock()
 
 # Movement detection state
 movement_lock = threading.Lock()
-movement_detected = False
+# When motion is detected, keep the movement state true for this many seconds
+MOVEMENT_HOLD_SECONDS = 10.0
+
+# Keep the timestamp (datetime) of the last detected movement and an ISO string
+last_movement_dt = None
 last_movement = None
 _motion_prev = None
 
@@ -144,10 +148,12 @@ def generate_mjpeg():
                 detected = mean_diff > 6.0
                 _motion_prev = small
 
-            with movement_lock:
-                movement_detected = bool(detected)
-                if movement_detected:
-                    last_movement = datetime.utcnow().isoformat() + 'Z'
+            if detected:
+                with movement_lock:
+                    # update timestamp of last movement; movement will be reported
+                    # as true for MOVEMENT_HOLD_SECONDS after this timestamp
+                    last_movement_dt = datetime.utcnow()
+                    last_movement = last_movement_dt.isoformat() + 'Z'
         except Exception:
             # Don't let motion detection break the stream
             pass
@@ -292,9 +298,18 @@ def get_movement_state():
     Example: { 'movement': True, 'last_movement': '2025-12-05T12:34:56Z' }
     """
     with movement_lock:
+        now = datetime.utcnow()
+        movement = False
+        if last_movement_dt is not None:
+            try:
+                delta = (now - last_movement_dt).total_seconds()
+                movement = delta <= MOVEMENT_HOLD_SECONDS
+            except Exception:
+                movement = False
+
         return {
-            'movement': bool(movement_detected),
-            'last_movement': last_movement
+            'movement': bool(movement),
+            'last_movement': last_movement if movement else None
         }
 
 
@@ -303,14 +318,29 @@ def _toggle_movement_test(value=None):
 
     Passing `value` as True/False sets the flag; None toggles it.
     """
-    global movement_detected, last_movement
+    global last_movement_dt, last_movement
     with movement_lock:
         if value is None:
-            movement_detected = not movement_detected
+            # toggle behavior: if currently within hold window, clear it; otherwise set now
+            now = datetime.utcnow()
+            in_window = False
+            if last_movement_dt is not None:
+                try:
+                    in_window = (now - last_movement_dt).total_seconds() <= MOVEMENT_HOLD_SECONDS
+                except Exception:
+                    in_window = False
+            if in_window:
+                last_movement_dt = None
+                last_movement = None
+            else:
+                last_movement_dt = now
+                last_movement = last_movement_dt.isoformat() + 'Z'
         else:
-            movement_detected = bool(value)
-        if movement_detected:
-            last_movement = datetime.utcnow().isoformat() + 'Z'
-        else:
-            last_movement = None
-    return {'movement': movement_detected, 'last_movement': last_movement}
+            if bool(value):
+                last_movement_dt = datetime.utcnow()
+                last_movement = last_movement_dt.isoformat() + 'Z'
+            else:
+                last_movement_dt = None
+                last_movement = None
+
+        return {'movement': bool(last_movement_dt is not None), 'last_movement': last_movement}
