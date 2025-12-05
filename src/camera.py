@@ -42,9 +42,9 @@ movement_lock = threading.Lock()
 # When motion is detected, keep the movement state true for this many seconds
 MOVEMENT_HOLD_SECONDS = 10.0
 # Detection tuning
-MOTION_CONSECUTIVE = 3            # consecutive frames required
-PIXEL_DIFF_THRESH = 20           # per-pixel diff threshold
-MOTION_AREA_RATIO = 0.008        # fraction of downsampled pixels that must change
+MOTION_CONSECUTIVE = 4            # consecutive frames required
+PIXEL_DIFF_THRESH = 30           # per-pixel diff threshold
+MOTION_AREA_RATIO = 0.01        # fraction of downsampled pixels that must change
 
 # Internal state
 _motion_prev = None
@@ -270,31 +270,21 @@ def _recorder_thread(duration_seconds, out_path, user_email=None, app_logger=Non
             import traceback
             traceback.print_exc()
     finally:
-        with recording_lock:
-            is_recording = False
-            last_recording = os.path.basename(out_path)
+        with movement_lock:
+            now = datetime.utcnow()
+            if value is None:
+                # Explicitly set movement true for the hold window when no param provided
+                last_movement_dt = now
+                last_movement = last_movement_dt.isoformat() + 'Z'
+            else:
+                if bool(value):
+                    last_movement_dt = now
+                    last_movement = last_movement_dt.isoformat() + 'Z'
+                else:
+                    last_movement_dt = None
+                    last_movement = None
 
-
-@login_required
-def stream_route():
-    """Stream MJPEG video."""
-    return Response(generate_mjpeg(), mimetype="multipart/x-mixed-replace; boundary=frame")
-
-
-@login_required
-def snapshot_route(app):
-    """Return a single JPEG snapshot and log the captured frame shape."""
-    if not _picamera2_available or picam2 is None:
-        try:
-            import numpy as np
-            frame = np.zeros((STREAM_HEIGHT, STREAM_WIDTH, 3), dtype=np.uint8)
-            frame[100:150, 100:150] = [0, 255, 0]
-        except Exception:
-            # Fallback minimal image
-            frame = Image.new('RGB', (STREAM_WIDTH, STREAM_HEIGHT), color=(0, 0, 0))
-    else:
-        with frame_lock:
-            frame = picam2.capture_array('main')
+            return {'movement': bool(last_movement_dt is not None), 'last_movement': last_movement}
 
     try:
         # app may not be available here; guard the logging
