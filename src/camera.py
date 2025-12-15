@@ -2,8 +2,9 @@
 Camera module for the home security camera application.
 Handles MJPEG streaming, snapshot, recording and a lightweight motion detector.
 
-This file is a cleaned, self-contained implementation that avoids nesting
-route wrappers inside inner scopes (which previously caused missing exports).
+Single, clean implementation: motion detection runs in `generate_mjpeg()` and
+the developer helper `_toggle_movement_test()` toggles or sets the movement
+flag as requested by the `/movement-test` route.
 """
 from flask import Response, jsonify, send_from_directory
 from flask_login import login_required, current_user
@@ -370,18 +371,30 @@ def get_movement_state():
 
 
 def _toggle_movement_test(value=None):
-    """Dev helper to set/clear movement state.
+    """Developer helper used by `/movement-test`.
 
-    If `value` is None, sets movement to true for the hold window.
-    If `value` is True/False, explicitly set or clear.
-    Returns the new movement state dict.
+    Behavior:
+    - If `value` is None: toggle the movement flag (if currently in hold window, clear it; otherwise set it).
+    - If `value` is True/False: explicitly set or clear movement.
+    Returns the new movement dict.
     """
     global last_movement_dt, last_movement
     with movement_lock:
         now = datetime.utcnow()
         if value is None:
-            last_movement_dt = now
-            last_movement = last_movement_dt.isoformat() + 'Z'
+            # toggle
+            in_window = False
+            if last_movement_dt is not None:
+                try:
+                    in_window = (now - last_movement_dt).total_seconds() <= MOVEMENT_HOLD_SECONDS
+                except Exception:
+                    in_window = False
+            if in_window:
+                last_movement_dt = None
+                last_movement = None
+            else:
+                last_movement_dt = now
+                last_movement = last_movement_dt.isoformat() + 'Z'
         else:
             if bool(value):
                 last_movement_dt = now
@@ -389,7 +402,9 @@ def _toggle_movement_test(value=None):
             else:
                 last_movement_dt = None
                 last_movement = None
+
         return {'movement': bool(last_movement_dt is not None), 'last_movement': last_movement}
+
 
 """
 Camera module for the home security camera application.
