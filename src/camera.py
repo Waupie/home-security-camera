@@ -135,6 +135,40 @@ def generate_mjpeg():
                 yield (b"--frame\r\n"
                        b"Content-Type: image/jpeg\r\n\r\n" + jpg + b"\r\n")
                 time.sleep(FRAME_SLEEP)
+
+
+            @login_required
+            def stream_route():
+                """Stream MJPEG video (route wrapper)."""
+                return Response(generate_mjpeg(), mimetype="multipart/x-mixed-replace; boundary=frame")
+
+
+            @login_required
+            def snapshot_route(app):
+                """Return a single JPEG snapshot and log the captured frame shape."""
+                if not _picamera2_available or picam2 is None:
+                    try:
+                        import numpy as np
+                        frame = np.zeros((STREAM_HEIGHT, STREAM_WIDTH, 3), dtype=np.uint8)
+                        frame[100:150, 100:150] = [0, 255, 0]
+                    except Exception:
+                        # Fallback minimal image
+                        frame = Image.new('RGB', (STREAM_WIDTH, STREAM_HEIGHT), color=(0, 0, 0))
+                else:
+                    with frame_lock:
+                        frame = picam2.capture_array('main')
+
+                try:
+                    # app may not be available here; guard the logging
+                    try:
+                        app.logger.info('Snapshot frame shape: %s', getattr(frame, 'shape', 'unknown'))
+                    except Exception:
+                        logging.getLogger('camera').info('Snapshot frame shape: %s', getattr(frame, 'shape', 'unknown'))
+                except Exception:
+                    pass
+
+                jpg = encode_jpeg(frame)
+                return Response(jpg, mimetype='image/jpeg')
         except Exception:
             # If numpy not available, just spin (unlikely)
             while True:
